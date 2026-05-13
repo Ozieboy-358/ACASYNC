@@ -5,10 +5,14 @@ import { useAcademic } from "@/lib/context";
 import Modal from "./Modal";
 import styles from "./Sidebar.module.css";
 import { syncToGoogle, initGoogleApi } from "@/lib/googleApi";
+import { Class } from "@/lib/types";
 
 export default function Sidebar() {
   const { classes, addClass, events } = useAcademic();
   const [isClassModalOpen, setIsClassModalOpen] = useState(false);
+  const [selectedClass, setSelectedClass] = useState<Class | null>(null);
+  const [activeTab, setActiveTab] = useState<'materials' | 'grades'>('materials');
+  
   const [newClassName, setNewClassName] = useState("");
   const [newClassColor, setNewClassColor] = useState("#8b5cf6");
 
@@ -29,61 +33,141 @@ export default function Sidebar() {
     }
   };
 
+  const classMaterials = events.filter(e => e.classId === selectedClass?.id && e.type === 'material');
+  const classAssignments = events.filter(e => e.classId === selectedClass?.id && e.score !== undefined);
+
+  const calculateGrade = () => {
+    if (classAssignments.length === 0) return "N/A";
+    let totalWeightedScore = 0;
+    let totalWeight = 0;
+    
+    classAssignments.forEach(a => {
+      if (a.score !== undefined && a.totalScore !== undefined && a.weight !== undefined) {
+        totalWeightedScore += (a.score / a.totalScore) * a.weight;
+        totalWeight += a.weight;
+      }
+    });
+
+    if (totalWeight === 0) return "N/A";
+    return Math.round((totalWeightedScore / totalWeight) * 100) + "%";
+  };
+
   return (
     <>
       <aside className={`${styles.sidebar} glass`}>
-        <div className={styles.header}>
-          <div className={styles.logo}>
-            <span className={styles.logoIcon}>A</span>
-            <h1>AcaSync</h1>
-          </div>
-        </div>
+        {selectedClass ? (
+          <div className={styles.detailView}>
+            <header className={styles.detailHeader}>
+              <button className={styles.backBtn} onClick={() => setSelectedClass(null)}>&larr;</button>
+              <h2 style={{ color: selectedClass.color }}>{selectedClass.name}</h2>
+            </header>
 
-        <nav className={styles.nav}>
-          <div className={styles.section}>
-            <h2 className={styles.sectionTitle}>Classes</h2>
-            <div className={styles.classList}>
-              {classes.map((cls) => (
-                <button key={cls.id} className={`${styles.classItem} glass-interactive`}>
-                  <span className={styles.classColor} style={{ backgroundColor: cls.color }}></span>
-                  {cls.name}
-                </button>
-              ))}
-              {classes.length === 0 && (
-                <p className={styles.emptyMsg}>No classes added yet.</p>
-              )}
+            <div className={styles.tabs}>
+              <button 
+                className={`${styles.tab} ${activeTab === 'materials' ? styles.tabActive : ""}`}
+                onClick={() => setActiveTab('materials')}
+              >
+                Materials
+              </button>
+              <button 
+                className={`${styles.tab} ${activeTab === 'grades' ? styles.tabActive : ""}`}
+                onClick={() => setActiveTab('grades')}
+              >
+                Grades
+              </button>
             </div>
-            <button className={styles.addBtn} onClick={() => setIsClassModalOpen(true)}>
-              + Add Class
-            </button>
-          </div>
 
-          <div className={styles.section}>
-            <h2 className={styles.sectionTitle}>Upcoming</h2>
-            <div className={styles.eventList}>
-              {events.slice(0, 5).map((event) => (
-                <div key={event.id} className={styles.eventItem}>
-                  <span className={styles.eventDate}>
-                    {new Date(event.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase()}
-                  </span>
-                  <p className={styles.eventTitle}>{event.title}</p>
+            {activeTab === 'materials' ? (
+              <div className={styles.materialsList}>
+                {classMaterials.map(m => (
+                  <div key={m.id} className={`${styles.materialCard} glass`}>
+                    <span className={styles.materialName}>{m.title}</span>
+                    {m.materialUrl && (
+                      <a href={m.materialUrl} target="_blank" className={styles.materialLink}>
+                        Open Link
+                      </a>
+                    )}
+                  </div>
+                ))}
+                {classMaterials.length === 0 && <p className={styles.emptyMsg}>No materials yet.</p>}
+              </div>
+            ) : (
+              <div className={styles.gradeView}>
+                <div className={`${styles.gradeInfo} glass`}>
+                  <p className={styles.gradeLabel}>Current Grade</p>
+                  <h3 className={styles.gradeValue}>{calculateGrade()}</h3>
                 </div>
-              ))}
-              {events.length === 0 && (
-                <p className={styles.emptyMsg}>No upcoming events.</p>
-              )}
-            </div>
+                <div className={styles.eventList} style={{ marginTop: '20px' }}>
+                  {classAssignments.map(a => (
+                    <div key={a.id} className={styles.eventItem}>
+                      <span className={styles.eventDate}>{a.score}/{a.totalScore}</span>
+                      <p className={styles.eventTitle}>{a.title} ({a.weight}%)</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-        </nav>
+        ) : (
+          <>
+            <div className={styles.header}>
+              <div className={styles.logo}>
+                <span className={styles.logoIcon}>A</span>
+                <h1>AcaSync</h1>
+              </div>
+            </div>
 
-        <div className={styles.footer}>
-          <button className={`${styles.syncBtn} glass-interactive`} onClick={handleSync}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M21 2v6h-6M3 12a9 9 0 0115-6.7L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.7L3 16" />
-            </svg>
-            Sync Google Cal
-          </button>
-        </div>
+            <nav className={styles.nav}>
+              <div className={styles.section}>
+                <h2 className={styles.sectionTitle}>Classes</h2>
+                <div className={styles.classList}>
+                  {classes.map((cls) => (
+                    <button 
+                      key={cls.id} 
+                      className={`${styles.classItem} glass-interactive`}
+                      onClick={() => setSelectedClass(cls)}
+                    >
+                      <span className={styles.classColor} style={{ backgroundColor: cls.color }}></span>
+                      {cls.name}
+                    </button>
+                  ))}
+                  {classes.length === 0 && (
+                    <p className={styles.emptyMsg}>No classes added yet.</p>
+                  )}
+                </div>
+                <button className={styles.addBtn} onClick={() => setIsClassModalOpen(true)}>
+                  + Add Class
+                </button>
+              </div>
+
+              <div className={styles.section}>
+                <h2 className={styles.sectionTitle}>Upcoming</h2>
+                <div className={styles.eventList}>
+                  {events.filter(e => e.type !== 'material').slice(0, 5).map((event) => (
+                    <div key={event.id} className={styles.eventItem}>
+                      <span className={styles.eventDate}>
+                        {new Date(event.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase()}
+                      </span>
+                      <p className={styles.eventTitle}>{event.title}</p>
+                    </div>
+                  ))}
+                  {events.length === 0 && (
+                    <p className={styles.emptyMsg}>No upcoming events.</p>
+                  )}
+                </div>
+              </div>
+            </nav>
+
+            <div className={styles.footer}>
+              <button className={`${styles.syncBtn} glass-interactive`} onClick={handleSync}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 2v6h-6M3 12a9 9 0 0115-6.7L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.7L3 16" />
+                </svg>
+                Sync Google Cal
+              </button>
+            </div>
+          </>
+        )}
       </aside>
 
       <Modal 

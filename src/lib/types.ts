@@ -11,4 +11,8 @@ export interface AcademicEvent {
   date: string; // ISO string
   type: 'assignment' | 'exam' | 'quiz' | 'material';
   description?: string;
+  materialUrl?: string; // Link to PDF/Doc
+  score?: number; // For grade tracking
+  totalScore?: number; // For grade tracking
+  weight?: number; // For grade tracking (percentage)
 }
