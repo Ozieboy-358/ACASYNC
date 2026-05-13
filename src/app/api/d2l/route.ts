@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import ical from 'node-ical';
 import axios from 'axios';
+const ICAL = require('ical.js');
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -12,17 +14,20 @@ export async function GET(request: NextRequest) {
 
   try {
     const response = await axios.get(url);
-    const data = ical.parseICS(response.data);
+    const jcalData = ICAL.parse(response.data);
+    const comp = new ICAL.Component(jcalData);
+    const vevents = comp.getAllSubcomponents('vevent');
     
-    const events = Object.values(data)
-      .filter(item => item.type === 'VEVENT')
-      .map((item: any) => ({
-        id: item.uid,
-        title: item.summary,
-        date: item.start.toISOString().split('T')[0],
-        description: item.description,
-        type: 'assignment' // Default for D2L items
-      }));
+    const events = vevents.map((vevent: any) => {
+      const event = new ICAL.Event(vevent);
+      return {
+        id: event.uid,
+        title: event.summary,
+        date: event.startDate.toJSDate().toISOString().split('T')[0],
+        description: event.description || '',
+        type: 'assignment'
+      };
+    });
 
     return NextResponse.json({ events });
   } catch (error) {

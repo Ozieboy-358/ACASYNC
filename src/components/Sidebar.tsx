@@ -6,7 +6,6 @@ import Modal from "./Modal";
 import styles from "./Sidebar.module.css";
 import { syncToGoogle, initGoogleApi } from "@/lib/googleApi";
 import { Class } from "@/lib/types";
-
 import axios from "axios";
 
 export default function Sidebar() {
@@ -38,18 +37,16 @@ export default function Sidebar() {
       const response = await axios.get(`/api/d2l?url=${encodeURIComponent(d2lUrl)}`);
       const newEvents = response.data.events;
 
-      // Add events to our context, checking for duplicates
       newEvents.forEach((event: any) => {
         const exists = events.find(e => e.title === event.title && e.date === event.date);
         if (!exists) {
           addEvent({
             ...event,
-            classId: "d2l-sync" // We could try to match classes here
+            classId: "d2l-sync"
           });
         }
       });
 
-      // Ensure "D2L" class exists
       if (!classes.find(c => c.name === "D2L Sync")) {
         addClass({ name: "D2L Sync", color: "#ff8c00" });
       }
@@ -124,7 +121,7 @@ export default function Sidebar() {
                   <div key={m.id} className={`${styles.materialCard} glass`}>
                     <span className={styles.materialName}>{m.title}</span>
                     {m.materialUrl && (
-                      <a href={m.materialUrl} target="_blank" className={styles.materialLink}>
+                      <a href={m.materialUrl} target="_blank" className={styles.materialLink} rel="noreferrer">
                         Open Link
                       </a>
                     )}
@@ -200,19 +197,21 @@ export default function Sidebar() {
             </nav>
 
             <div className={styles.footer}>
-          <button className={`${styles.syncBtn} glass-interactive`} onClick={() => setIsD2LModalOpen(true)} style={{ marginBottom: '10px' }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M12 2v20m10-10H2" />
-            </svg>
-            Import from D2L
-          </button>
-          <button className={`${styles.syncBtn} glass-interactive`} onClick={handleSync}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M21 2v6h-6M3 12a9 9 0 0115-6.7L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.7L3 16" />
-            </svg>
-            Sync Google Cal
-          </button>
-        </div>
+              <button className={`${styles.syncBtn} glass-interactive`} onClick={() => setIsD2LModalOpen(true)} style={{ marginBottom: '10px' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 2v20m10-10H2" />
+                </svg>
+                Import from D2L
+              </button>
+              <button className={`${styles.syncBtn} glass-interactive`} onClick={handleSync}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 2v6h-6M3 12a9 9 0 0115-6.7L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.7L3 16" />
+                </svg>
+                Sync Google Cal
+              </button>
+            </div>
+          </>
+        )}
       </aside>
 
       <Modal 
@@ -240,8 +239,6 @@ export default function Sidebar() {
           </button>
         </form>
       </Modal>
-        )}
-      </aside>
 
       <Modal 
         isOpen={isClassModalOpen} 
