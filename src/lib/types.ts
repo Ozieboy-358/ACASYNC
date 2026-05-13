@@ -2,6 +2,7 @@ export interface Class {
   id: string;
   name: string;
   color: string;
+  notebookUrl?: string; // Link to NotebookLM
 }
 
 export interface AcademicEvent {

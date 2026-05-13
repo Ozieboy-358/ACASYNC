@@ -13,10 +13,11 @@ export default function Sidebar() {
   const [isClassModalOpen, setIsClassModalOpen] = useState(false);
   const [isD2LModalOpen, setIsD2LModalOpen] = useState(false);
   const [selectedClass, setSelectedClass] = useState<Class | null>(null);
-  const [activeTab, setActiveTab] = useState<'materials' | 'grades'>('materials');
+  const [activeTab, setActiveTab] = useState<'materials' | 'grades' | 'notebook'>('materials');
   
   const [newClassName, setNewClassName] = useState("");
   const [newClassColor, setNewClassColor] = useState("#8b5cf6");
+  const [newNotebookUrl, setNewNotebookUrl] = useState("");
   const [d2lUrl, setD2lUrl] = useState("");
   const [isSyncing, setIsSyncing] = useState(false);
 
@@ -65,8 +66,13 @@ export default function Sidebar() {
   const handleAddClass = (e: React.FormEvent) => {
     e.preventDefault();
     if (newClassName.trim()) {
-      addClass({ name: newClassName, color: newClassColor });
+      addClass({ 
+        name: newClassName, 
+        color: newClassColor,
+        notebookUrl: newNotebookUrl 
+      });
       setNewClassName("");
+      setNewNotebookUrl("");
       setIsClassModalOpen(false);
     }
   };
@@ -113,9 +119,15 @@ export default function Sidebar() {
               >
                 Grades
               </button>
+              <button 
+                className={`${styles.tab} ${activeTab === 'notebook' ? styles.tabActive : ""}`}
+                onClick={() => setActiveTab('notebook')}
+              >
+                Notebook
+              </button>
             </div>
 
-            {activeTab === 'materials' ? (
+            {activeTab === 'materials' && (
               <div className={styles.materialsList}>
                 {classMaterials.map(m => (
                   <div key={m.id} className={`${styles.materialCard} glass`}>
@@ -129,7 +141,9 @@ export default function Sidebar() {
                 ))}
                 {classMaterials.length === 0 && <p className={styles.emptyMsg}>No materials yet.</p>}
               </div>
-            ) : (
+            )}
+
+            {activeTab === 'grades' && (
               <div className={styles.gradeView}>
                 <div className={`${styles.gradeInfo} glass`}>
                   <p className={styles.gradeLabel}>Current Grade</p>
@@ -142,6 +156,26 @@ export default function Sidebar() {
                       <p className={styles.eventTitle}>{a.title} ({a.weight}%)</p>
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'notebook' && (
+              <div className={styles.notebookView}>
+                <div className={`${styles.notebookInfo} glass`}>
+                  <div className={styles.notebookIcon}>📓</div>
+                  <p className={styles.notebookText}>
+                    Use NotebookLM to analyze your lectures, syllabus, and study notes for this class.
+                  </p>
+                  <a 
+                    href={selectedClass.notebookUrl || "https://notebooklm.google.com/"} 
+                    target="_blank" 
+                    rel="noreferrer"
+                    className="btn-primary"
+                    style={{ marginTop: '16px', display: 'inline-block' }}
+                  >
+                    Open NotebookLM
+                  </a>
                 </div>
               </div>
             )}
@@ -255,6 +289,16 @@ export default function Sidebar() {
               placeholder="e.g. Advanced Physics"
               className={styles.input}
               autoFocus
+            />
+          </div>
+          <div className={styles.formGroup}>
+            <label>NotebookLM URL (Optional)</label>
+            <input 
+              type="url" 
+              value={newNotebookUrl} 
+              onChange={(e) => setNewNotebookUrl(e.target.value)}
+              placeholder="Link to your specific notebook"
+              className={styles.input}
             />
           </div>
           <div className={styles.formGroup}>
