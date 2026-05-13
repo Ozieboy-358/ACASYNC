@@ -7,14 +7,19 @@ import styles from "./Sidebar.module.css";
 import { syncToGoogle, initGoogleApi } from "@/lib/googleApi";
 import { Class } from "@/lib/types";
 
+import axios from "axios";
+
 export default function Sidebar() {
-  const { classes, addClass, events } = useAcademic();
+  const { classes, addClass, events, addEvent } = useAcademic();
   const [isClassModalOpen, setIsClassModalOpen] = useState(false);
+  const [isD2LModalOpen, setIsD2LModalOpen] = useState(false);
   const [selectedClass, setSelectedClass] = useState<Class | null>(null);
   const [activeTab, setActiveTab] = useState<'materials' | 'grades'>('materials');
   
   const [newClassName, setNewClassName] = useState("");
   const [newClassColor, setNewClassColor] = useState("#8b5cf6");
+  const [d2lUrl, setD2lUrl] = useState("");
+  const [isSyncing, setIsSyncing] = useState(false);
 
   useEffect(() => {
     initGoogleApi();
@@ -22,6 +27,42 @@ export default function Sidebar() {
 
   const handleSync = async () => {
     await syncToGoogle(events);
+  };
+
+  const handleD2LSync = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!d2lUrl.trim()) return;
+
+    setIsSyncing(true);
+    try {
+      const response = await axios.get(`/api/d2l?url=${encodeURIComponent(d2lUrl)}`);
+      const newEvents = response.data.events;
+
+      // Add events to our context, checking for duplicates
+      newEvents.forEach((event: any) => {
+        const exists = events.find(e => e.title === event.title && e.date === event.date);
+        if (!exists) {
+          addEvent({
+            ...event,
+            classId: "d2l-sync" // We could try to match classes here
+          });
+        }
+      });
+
+      // Ensure "D2L" class exists
+      if (!classes.find(c => c.name === "D2L Sync")) {
+        addClass({ name: "D2L Sync", color: "#ff8c00" });
+      }
+
+      setD2lUrl("");
+      setIsD2LModalOpen(false);
+      alert(`Synced ${newEvents.length} events from D2L!`);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to sync D2L. Please check the URL.");
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const handleAddClass = (e: React.FormEvent) => {
@@ -159,14 +200,46 @@ export default function Sidebar() {
             </nav>
 
             <div className={styles.footer}>
-              <button className={`${styles.syncBtn} glass-interactive`} onClick={handleSync}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M21 2v6h-6M3 12a9 9 0 0115-6.7L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.7L3 16" />
-                </svg>
-                Sync Google Cal
-              </button>
-            </div>
-          </>
+          <button className={`${styles.syncBtn} glass-interactive`} onClick={() => setIsD2LModalOpen(true)} style={{ marginBottom: '10px' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 2v20m10-10H2" />
+            </svg>
+            Import from D2L
+          </button>
+          <button className={`${styles.syncBtn} glass-interactive`} onClick={handleSync}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 2v6h-6M3 12a9 9 0 0115-6.7L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.7L3 16" />
+            </svg>
+            Sync Google Cal
+          </button>
+        </div>
+      </aside>
+
+      <Modal 
+        isOpen={isD2LModalOpen} 
+        onClose={() => setIsD2LModalOpen(false)} 
+        title="Sync with D2L Brightspace"
+      >
+        <form onSubmit={handleD2LSync} className={styles.form}>
+          <p className={styles.instructionText}>
+            Paste your D2L iCal subscription URL below. You can find this in your D2L Calendar Settings.
+          </p>
+          <div className={styles.formGroup}>
+            <label>iCal URL</label>
+            <input 
+              type="url" 
+              value={d2lUrl} 
+              onChange={(e) => setD2lUrl(e.target.value)}
+              placeholder="https://.../feed.ics"
+              className={styles.input}
+              autoFocus
+            />
+          </div>
+          <button type="submit" className="btn-primary" disabled={isSyncing}>
+            {isSyncing ? "Syncing..." : "Sync Assignments"}
+          </button>
+        </form>
+      </Modal>
         )}
       </aside>
 

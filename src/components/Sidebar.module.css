@@ -163,6 +163,13 @@
   color: var(--text-secondary);
 }
 
+.instructionText {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+
 .input {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--card-border);
