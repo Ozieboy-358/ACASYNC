@@ -3,6 +3,7 @@ export interface Class {
   name: string;
   color: string;
   notebookUrl?: string; // Link to NotebookLM
+  credits?: number; // For GPA calculation
 }
 
 export interface AcademicEvent {
@@ -16,4 +17,8 @@ export interface AcademicEvent {
   score?: number; // For grade tracking
   totalScore?: number; // For grade tracking
   weight?: number; // For grade tracking (percentage)
+  completed?: boolean; // For task tracking
+  startTime?: string; // HH:MM format
+  endTime?: string; // HH:MM format
 }
+

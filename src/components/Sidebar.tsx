@@ -9,15 +9,37 @@ import { Class } from "@/lib/types";
 import axios from "axios";
 
 export default function Sidebar() {
-  const { classes, addClass, events, addEvent } = useAcademic();
+  const { 
+    classes, 
+    addClass, 
+    updateClass, 
+    deleteClass, 
+    events, 
+    addEvent, 
+    currentView, 
+    setCurrentView,
+    theme,
+    setTheme
+  } = useAcademic();
+
   const [isClassModalOpen, setIsClassModalOpen] = useState(false);
+  const [isEditClassModalOpen, setIsEditClassModalOpen] = useState(false);
   const [isD2LModalOpen, setIsD2LModalOpen] = useState(false);
   const [selectedClass, setSelectedClass] = useState<Class | null>(null);
   const [activeTab, setActiveTab] = useState<'materials' | 'grades' | 'notebook'>('materials');
   
+  // Class add form state
   const [newClassName, setNewClassName] = useState("");
   const [newClassColor, setNewClassColor] = useState("#8b5cf6");
   const [newNotebookUrl, setNewNotebookUrl] = useState("");
+  const [newClassCredits, setNewClassCredits] = useState(3);
+
+  // Class edit form state
+  const [editClassName, setEditClassName] = useState("");
+  const [editClassColor, setEditClassColor] = useState("#8b5cf6");
+  const [editNotebookUrl, setEditNotebookUrl] = useState("");
+  const [editClassCredits, setEditClassCredits] = useState(3);
+
   const [d2lUrl, setD2lUrl] = useState("");
   const [isSyncing, setIsSyncing] = useState(false);
 
@@ -49,7 +71,7 @@ export default function Sidebar() {
       });
 
       if (!classes.find(c => c.name === "D2L Sync")) {
-        addClass({ name: "D2L Sync", color: "#ff8c00" });
+        addClass({ name: "D2L Sync", color: "#ff8c00", credits: 0 });
       }
 
       setD2lUrl("");
@@ -69,11 +91,29 @@ export default function Sidebar() {
       addClass({ 
         name: newClassName, 
         color: newClassColor,
-        notebookUrl: newNotebookUrl 
+        notebookUrl: newNotebookUrl,
+        credits: newClassCredits 
       });
       setNewClassName("");
       setNewNotebookUrl("");
+      setNewClassCredits(3);
       setIsClassModalOpen(false);
+    }
+  };
+
+  const handleEditClass = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (selectedClass && editClassName.trim()) {
+      const updatedClass = {
+        id: selectedClass.id,
+        name: editClassName,
+        color: editClassColor,
+        notebookUrl: editNotebookUrl,
+        credits: editClassCredits
+      };
+      updateClass(updatedClass);
+      setSelectedClass(updatedClass);
+      setIsEditClassModalOpen(false);
     }
   };
 
@@ -96,6 +136,22 @@ export default function Sidebar() {
     return Math.round((totalWeightedScore / totalWeight) * 100) + "%";
   };
 
+  const getRelativeTimeString = (dateStr: string) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const eventDate = new Date(dateStr);
+    eventDate.setHours(0, 0, 0, 0);
+    
+    const diffTime = eventDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) return "Today";
+    if (diffDays === 1) return "Tomorrow";
+    if (diffDays > 1) return `${diffDays} days left`;
+    if (diffDays === -1) return "Yesterday";
+    return `${Math.abs(diffDays)} days ago`;
+  };
+
   return (
     <>
       <aside className={`${styles.sidebar} glass`}>
@@ -104,6 +160,33 @@ export default function Sidebar() {
             <header className={styles.detailHeader}>
               <button className={styles.backBtn} onClick={() => setSelectedClass(null)}>&larr;</button>
               <h2 style={{ color: selectedClass.color }}>{selectedClass.name}</h2>
+              <div className={styles.classActions}>
+                <button 
+                  className={styles.actionIconBtn} 
+                  title="Edit Class" 
+                  onClick={() => {
+                    setEditClassName(selectedClass.name);
+                    setEditClassColor(selectedClass.color);
+                    setEditNotebookUrl(selectedClass.notebookUrl || "");
+                    setEditClassCredits(selectedClass.credits || 3);
+                    setIsEditClassModalOpen(true);
+                  }}
+                >
+                  ✏️
+                </button>
+                <button 
+                  className={`${styles.actionIconBtn} ${styles.actionIconBtnDelete}`} 
+                  title="Delete Class" 
+                  onClick={() => {
+                    if (confirm(`Delete "${selectedClass.name}" and all its tasks/grades?`)) {
+                      deleteClass(selectedClass.id);
+                      setSelectedClass(null);
+                    }
+                  }}
+                >
+                  🗑️
+                </button>
+              </div>
             </header>
 
             <div className={styles.tabs}>
@@ -148,12 +231,19 @@ export default function Sidebar() {
                 <div className={`${styles.gradeInfo} glass`}>
                   <p className={styles.gradeLabel}>Current Grade</p>
                   <h3 className={styles.gradeValue}>{calculateGrade()}</h3>
+                  <p className={styles.emptyMsg} style={{ fontSize: '11px', marginTop: '4px' }}>
+                    Credits: {selectedClass.credits || 3}
+                  </p>
                 </div>
                 <div className={styles.eventList} style={{ marginTop: '20px' }}>
                   {classAssignments.map(a => (
-                    <div key={a.id} className={styles.eventItem}>
-                      <span className={styles.eventDate}>{a.score}/{a.totalScore}</span>
-                      <p className={styles.eventTitle}>{a.title} ({a.weight}%)</p>
+                    <div key={a.id} className={styles.eventItem} style={{ opacity: a.completed ? 0.6 : 1 }}>
+                      <span className={styles.eventDate}>
+                        {a.score}/{a.totalScore} {a.completed && "✓"}
+                      </span>
+                      <p className={styles.eventTitle} style={{ textDecoration: a.completed ? 'line-through' : 'none' }}>
+                        {a.title} ({a.weight}%)
+                      </p>
                     </div>
                   ))}
                 </div>
@@ -182,11 +272,27 @@ export default function Sidebar() {
           </div>
         ) : (
           <>
-            <div className={styles.header}>
+            <div className={styles.header} style={{ marginBottom: '20px' }}>
               <div className={styles.logo}>
                 <span className={styles.logoIcon}>A</span>
                 <h1>AcaSync</h1>
               </div>
+            </div>
+
+            {/* View switcher buttons */}
+            <div className={styles.viewSelector}>
+              <button 
+                className={`${styles.viewTab} ${currentView === 'calendar' ? styles.viewTabActive : ""}`} 
+                onClick={() => setCurrentView('calendar')}
+              >
+                📅 Calendar
+              </button>
+              <button 
+                className={`${styles.viewTab} ${currentView === 'dashboard' ? styles.viewTabActive : ""}`} 
+                onClick={() => setCurrentView('dashboard')}
+              >
+                📊 Dashboard
+              </button>
             </div>
 
             <nav className={styles.nav}>
@@ -215,15 +321,26 @@ export default function Sidebar() {
               <div className={styles.section}>
                 <h2 className={styles.sectionTitle}>Upcoming</h2>
                 <div className={styles.eventList}>
-                  {events.filter(e => e.type !== 'material').slice(0, 5).map((event) => (
-                    <div key={event.id} className={styles.eventItem}>
-                      <span className={styles.eventDate}>
-                        {new Date(event.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase()}
-                      </span>
-                      <p className={styles.eventTitle}>{event.title}</p>
-                    </div>
-                  ))}
-                  {events.length === 0 && (
+                  {events
+                    .filter(e => e.type !== 'material' && !e.completed)
+                    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                    .slice(0, 5)
+                    .map((event) => {
+                      const relTime = getRelativeTimeString(event.date);
+                      const isUrgent = relTime === "Today" || relTime === "Tomorrow" || relTime.includes("1 days left");
+                      return (
+                        <div key={event.id} className={styles.eventItem}>
+                          <span className={styles.eventDate}>
+                            {new Date(event.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase()}
+                          </span>
+                          <p className={styles.eventTitle}>{event.title}</p>
+                          <span className={`${styles.countdownBadge} ${isUrgent ? styles.countdownBadgeUrgent : ""}`}>
+                            {relTime}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  {events.filter(e => e.type !== 'material' && !e.completed).length === 0 && (
                     <p className={styles.emptyMsg}>No upcoming events.</p>
                   )}
                 </div>
@@ -237,12 +354,39 @@ export default function Sidebar() {
                 </svg>
                 Import from D2L
               </button>
-              <button className={`${styles.syncBtn} glass-interactive`} onClick={handleSync}>
+              <button className={`${styles.syncBtn} glass-interactive`} onClick={handleSync} style={{ marginBottom: '16px' }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M21 2v6h-6M3 12a9 9 0 0115-6.7L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.7L3 16" />
                 </svg>
                 Sync Google Cal
               </button>
+
+              {/* Theme selector dots */}
+              <div className={styles.themeContainer}>
+                <span className={styles.themeLabel}>Theme Accent</span>
+                <div className={styles.themeSelector}>
+                  <div 
+                    className={`${styles.themeDot} ${styles.themeDotMidnight} ${theme === 'midnight' ? styles.themeDotActive : ''}`} 
+                    onClick={() => setTheme('midnight')}
+                    title="Midnight Purple"
+                  />
+                  <div 
+                    className={`${styles.themeDot} ${styles.themeDotCyberpunk} ${theme === 'cyberpunk' ? styles.themeDotActive : ''}`} 
+                    onClick={() => setTheme('cyberpunk')}
+                    title="Neon Cyberpunk"
+                  />
+                  <div 
+                    className={`${styles.themeDot} ${styles.themeDotSakura} ${theme === 'sakura' ? styles.themeDotActive : ''}`} 
+                    onClick={() => setTheme('sakura')}
+                    title="Sakura Rose"
+                  />
+                  <div 
+                    className={`${styles.themeDot} ${styles.themeDotOcean} ${theme === 'ocean' ? styles.themeDotActive : ''}`} 
+                    onClick={() => setTheme('ocean')}
+                    title="Deep Ocean"
+                  />
+                </div>
+              </div>
             </div>
           </>
         )}
@@ -288,8 +432,32 @@ export default function Sidebar() {
               onChange={(e) => setNewClassName(e.target.value)}
               placeholder="e.g. Advanced Physics"
               className={styles.input}
+              required
               autoFocus
             />
+          </div>
+          <div className={styles.row}>
+            <div className={styles.formGroup}>
+              <label>Credits (GPA)</label>
+              <input 
+                type="number" 
+                value={newClassCredits} 
+                min={0}
+                max={6}
+                onChange={(e) => setNewClassCredits(parseFloat(e.target.value) || 0)}
+                className={styles.input}
+                required
+              />
+            </div>
+            <div className={styles.formGroup} style={{ flex: 1 }}>
+              <label>Color</label>
+              <input 
+                type="color" 
+                value={newClassColor} 
+                onChange={(e) => setNewClassColor(e.target.value)}
+                className={styles.colorInput}
+              />
+            </div>
           </div>
           <div className={styles.formGroup}>
             <label>NotebookLM URL (Optional)</label>
@@ -301,18 +469,63 @@ export default function Sidebar() {
               className={styles.input}
             />
           </div>
+          <button type="submit" className="btn-primary">Add Class</button>
+        </form>
+      </Modal>
+
+      <Modal 
+        isOpen={isEditClassModalOpen} 
+        onClose={() => setIsEditClassModalOpen(false)} 
+        title="Edit Class Details"
+      >
+        <form onSubmit={handleEditClass} className={styles.form}>
           <div className={styles.formGroup}>
-            <label>Color</label>
+            <label>Class Name</label>
             <input 
-              type="color" 
-              value={newClassColor} 
-              onChange={(e) => setNewClassColor(e.target.value)}
-              className={styles.colorInput}
+              type="text" 
+              value={editClassName} 
+              onChange={(e) => setEditClassName(e.target.value)}
+              className={styles.input}
+              required
+              autoFocus
             />
           </div>
-          <button type="submit" className="btn-primary">Add Class</button>
+          <div className={styles.row}>
+            <div className={styles.formGroup}>
+              <label>Credits (GPA)</label>
+              <input 
+                type="number" 
+                value={editClassCredits} 
+                min={0}
+                max={6}
+                onChange={(e) => setEditClassCredits(parseFloat(e.target.value) || 0)}
+                className={styles.input}
+                required
+              />
+            </div>
+            <div className={styles.formGroup} style={{ flex: 1 }}>
+              <label>Color</label>
+              <input 
+                type="color" 
+                value={editClassColor} 
+                onChange={(e) => setEditClassColor(e.target.value)}
+                className={styles.colorInput}
+              />
+            </div>
+          </div>
+          <div className={styles.formGroup}>
+            <label>NotebookLM URL (Optional)</label>
+            <input 
+              type="url" 
+              value={editNotebookUrl} 
+              onChange={(e) => setEditNotebookUrl(e.target.value)}
+              className={styles.input}
+            />
+          </div>
+          <button type="submit" className="btn-primary">Save Changes</button>
         </form>
       </Modal>
     </>
   );
 }
+

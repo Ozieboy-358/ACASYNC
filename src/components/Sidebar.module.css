@@ -298,3 +298,124 @@
   color: var(--text-secondary);
   line-height: 1.6;
 }
+
+/* Navigation Tab Group at the top */
+.viewSelector {
+  display: flex;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 4px;
+  border-radius: 12px;
+  margin-bottom: 24px;
+}
+
+.viewTab {
+  flex: 1;
+  padding: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 10px;
+  color: var(--text-secondary);
+  text-align: center;
+  transition: all 0.2s ease;
+}
+
+.viewTabActive {
+  background: var(--accent);
+  color: #ffffff;
+  box-shadow: 0 4px 12px var(--accent-glow);
+}
+
+/* Countdown Badge */
+.countdownBadge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+  align-self: flex-start;
+  margin-top: 2px;
+  text-transform: uppercase;
+}
+
+.countdownBadgeUrgent {
+  background: rgba(244, 63, 94, 0.15);
+  color: #f43f5e;
+}
+
+/* Theme selector styling */
+.themeContainer {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.themeLabel {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  letter-spacing: 0.5px;
+}
+
+.themeSelector {
+  display: flex;
+  gap: 8px;
+}
+
+.themeDot {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: transform 0.2s, border-color 0.2s;
+  position: relative;
+}
+
+.themeDot:hover {
+  transform: scale(1.15);
+}
+
+.themeDotActive {
+  border-color: #ffffff;
+  transform: scale(1.1);
+}
+
+.themeDotMidnight { background: #8b5cf6; }
+.themeDotCyberpunk { background: #d946ef; }
+.themeDotSakura { background: #f43f5e; }
+.themeDotOcean { background: #0ea5e9; }
+
+/* Edit & Delete Action Row in class detail header */
+.classActions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.actionIconBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: var(--text-secondary);
+  transition: all 0.2s;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.actionIconBtn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.actionIconBtnDelete:hover {
+  color: #f43f5e;
+  background: rgba(244, 63, 94, 0.15);
+}
+
