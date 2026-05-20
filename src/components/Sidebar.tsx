@@ -255,16 +255,34 @@ export default function Sidebar() {
                 <div className={`${styles.notebookInfo} glass`}>
                   <div className={styles.notebookIcon}>📓</div>
                   <p className={styles.notebookText}>
-                    Use NotebookLM to analyze your lectures, syllabus, and study notes for this class.
+                    Analyze your syllabus, lecture notes, and materials using our built-in NotebookLM workspace, or open the external application.
                   </p>
+                  <button 
+                    onClick={() => {
+                      localStorage.setItem('aca_notebook_class_id', selectedClass.id);
+                      setCurrentView('notebook');
+                    }}
+                    className="btn-primary"
+                    style={{ marginTop: '16px', display: 'block', width: '100%', cursor: 'pointer' }}
+                  >
+                    Enter Local Workspace
+                  </button>
                   <a 
                     href={selectedClass.notebookUrl || "https://notebooklm.google.com/"} 
                     target="_blank" 
                     rel="noreferrer"
                     className="btn-primary"
-                    style={{ marginTop: '16px', display: 'inline-block' }}
+                    style={{ 
+                      marginTop: '10px', 
+                      display: 'block', 
+                      textAlign: 'center', 
+                      backgroundColor: 'transparent', 
+                      border: '1px solid var(--accent)', 
+                      color: 'var(--foreground)', 
+                      boxShadow: 'none' 
+                    }}
                   >
-                    Open NotebookLM
+                    Open External Link
                   </a>
                 </div>
               </div>
@@ -292,6 +310,12 @@ export default function Sidebar() {
                 onClick={() => setCurrentView('dashboard')}
               >
                 📊 Dashboard
+              </button>
+              <button 
+                className={`${styles.viewTab} ${currentView === 'notebook' ? styles.viewTabActive : ""}`} 
+                onClick={() => setCurrentView('notebook')}
+              >
+                📓 NotebookLM
               </button>
             </div>
 

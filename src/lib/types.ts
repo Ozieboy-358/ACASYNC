@@ -22,3 +22,15 @@ export interface AcademicEvent {
   endTime?: string; // HH:MM format
 }
 
+export interface NotebookSource {
+  id: string;
+  classId: string; // Course ID this source belongs to, or 'global'
+  title: string;
+  type: 'note' | 'link' | 'pdf' | 'syllabus';
+  content: string; // Full text content used for searching & queries
+  url?: string;
+  wordCount: number;
+  addedAt: string;
+}
+
+
