@@ -25,6 +25,7 @@ export default function Sidebar() {
   const [isClassModalOpen, setIsClassModalOpen] = useState(false);
   const [isEditClassModalOpen, setIsEditClassModalOpen] = useState(false);
   const [isD2LModalOpen, setIsD2LModalOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [selectedClass, setSelectedClass] = useState<Class | null>(null);
   const [activeTab, setActiveTab] = useState<'materials' | 'grades' | 'notebook'>('materials');
   
@@ -290,125 +291,146 @@ export default function Sidebar() {
           </div>
         ) : (
           <>
-            <div className={styles.header} style={{ marginBottom: '20px' }}>
+            <div className={styles.header}>
               <div className={styles.logo}>
                 <span className={styles.logoIcon}>A</span>
                 <h1>AcaSync</h1>
               </div>
+              <button 
+                className={styles.mobileMenuToggle} 
+                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                aria-label="Toggle Menu"
+              >
+                {isMobileMenuOpen ? "✕" : "☰"}
+              </button>
             </div>
 
             {/* View switcher buttons */}
             <div className={styles.viewSelector}>
               <button 
                 className={`${styles.viewTab} ${currentView === 'calendar' ? styles.viewTabActive : ""}`} 
-                onClick={() => setCurrentView('calendar')}
+                onClick={() => {
+                  setCurrentView('calendar');
+                  setIsMobileMenuOpen(false);
+                }}
               >
                 📅 Calendar
               </button>
               <button 
                 className={`${styles.viewTab} ${currentView === 'dashboard' ? styles.viewTabActive : ""}`} 
-                onClick={() => setCurrentView('dashboard')}
+                onClick={() => {
+                  setCurrentView('dashboard');
+                  setIsMobileMenuOpen(false);
+                }}
               >
                 📊 Dashboard
               </button>
               <button 
                 className={`${styles.viewTab} ${currentView === 'notebook' ? styles.viewTabActive : ""}`} 
-                onClick={() => setCurrentView('notebook')}
+                onClick={() => {
+                  setCurrentView('notebook');
+                  setIsMobileMenuOpen(false);
+                }}
               >
                 📓 NotebookLM
               </button>
             </div>
 
-            <nav className={styles.nav}>
-              <div className={styles.section}>
-                <h2 className={styles.sectionTitle}>Classes</h2>
-                <div className={styles.classList}>
-                  {classes.map((cls) => (
-                    <button 
-                      key={cls.id} 
-                      className={`${styles.classItem} glass-interactive`}
-                      onClick={() => setSelectedClass(cls)}
-                    >
-                      <span className={styles.classColor} style={{ backgroundColor: cls.color }}></span>
-                      {cls.name}
-                    </button>
-                  ))}
-                  {classes.length === 0 && (
-                    <p className={styles.emptyMsg}>No classes added yet.</p>
-                  )}
+            <div className={`${styles.sidebarContent} ${isMobileMenuOpen ? styles.mobileOpen : ""}`}>
+              <nav className={styles.nav}>
+                <div className={styles.section}>
+                  <h2 className={styles.sectionTitle}>Classes</h2>
+                  <div className={styles.classList}>
+                    {classes.map((cls) => (
+                      <button 
+                        key={cls.id} 
+                        className={`${styles.classItem} glass-interactive`}
+                        onClick={() => {
+                          setSelectedClass(cls);
+                          setIsMobileMenuOpen(false);
+                        }}
+                      >
+                        <span className={styles.classColor} style={{ backgroundColor: cls.color }}></span>
+                        {cls.name}
+                      </button>
+                    ))}
+                    {classes.length === 0 && (
+                      <p className={styles.emptyMsg}>No classes added yet.</p>
+                    )}
+                  </div>
+                  <button className={styles.addBtn} onClick={() => setIsClassModalOpen(true)}>
+                    + Add Class
+                  </button>
                 </div>
-                <button className={styles.addBtn} onClick={() => setIsClassModalOpen(true)}>
-                  + Add Class
+
+                <div className={styles.section}>
+                  <h2 className={styles.sectionTitle}>Upcoming</h2>
+                  <div className={styles.eventList}>
+                    {events
+                      .filter(e => e.type !== 'material' && !e.completed)
+                      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                      .slice(0, 5)
+                      .map((event) => {
+                        const relTime = getRelativeTimeString(event.date);
+                        const isUrgent = relTime === "Today" || relTime === "Tomorrow" || relTime.includes("1 days left");
+                        return (
+                          <div key={event.id} className={styles.eventItem}>
+                            <span className={styles.eventDate}>
+                              {new Date(event.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase()}
+                            </span>
+                            <p className={styles.eventTitle}>{event.title}</p>
+                            <span className={`${styles.countdownBadge} ${isUrgent ? styles.countdownBadgeUrgent : ""}`}>
+                              {relTime}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    {events.filter(e => e.type !== 'material' && !e.completed).length === 0 && (
+                      <p className={styles.emptyMsg}>No upcoming events.</p>
+                    )}
+                  </div>
+                </div>
+              </nav>
+
+              <div className={styles.footer}>
+                <button className={`${styles.syncBtn} glass-interactive`} onClick={() => setIsD2LModalOpen(true)} style={{ marginBottom: '10px' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12 2v20m10-10H2" />
+                  </svg>
+                  Import from D2L
                 </button>
-              </div>
+                <button className={`${styles.syncBtn} glass-interactive`} onClick={handleSync} style={{ marginBottom: '16px' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M21 2v6h-6M3 12a9 9 0 0115-6.7L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.7L3 16" />
+                  </svg>
+                  Sync Google Cal
+                </button>
 
-              <div className={styles.section}>
-                <h2 className={styles.sectionTitle}>Upcoming</h2>
-                <div className={styles.eventList}>
-                  {events
-                    .filter(e => e.type !== 'material' && !e.completed)
-                    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-                    .slice(0, 5)
-                    .map((event) => {
-                      const relTime = getRelativeTimeString(event.date);
-                      const isUrgent = relTime === "Today" || relTime === "Tomorrow" || relTime.includes("1 days left");
-                      return (
-                        <div key={event.id} className={styles.eventItem}>
-                          <span className={styles.eventDate}>
-                            {new Date(event.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase()}
-                          </span>
-                          <p className={styles.eventTitle}>{event.title}</p>
-                          <span className={`${styles.countdownBadge} ${isUrgent ? styles.countdownBadgeUrgent : ""}`}>
-                            {relTime}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  {events.filter(e => e.type !== 'material' && !e.completed).length === 0 && (
-                    <p className={styles.emptyMsg}>No upcoming events.</p>
-                  )}
-                </div>
-              </div>
-            </nav>
-
-            <div className={styles.footer}>
-              <button className={`${styles.syncBtn} glass-interactive`} onClick={() => setIsD2LModalOpen(true)} style={{ marginBottom: '10px' }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 2v20m10-10H2" />
-                </svg>
-                Import from D2L
-              </button>
-              <button className={`${styles.syncBtn} glass-interactive`} onClick={handleSync} style={{ marginBottom: '16px' }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M21 2v6h-6M3 12a9 9 0 0115-6.7L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.7L3 16" />
-                </svg>
-                Sync Google Cal
-              </button>
-
-              {/* Theme selector dots */}
-              <div className={styles.themeContainer}>
-                <span className={styles.themeLabel}>Theme Accent</span>
-                <div className={styles.themeSelector}>
-                  <div 
-                    className={`${styles.themeDot} ${styles.themeDotMidnight} ${theme === 'midnight' ? styles.themeDotActive : ''}`} 
-                    onClick={() => setTheme('midnight')}
-                    title="Midnight Purple"
-                  />
-                  <div 
-                    className={`${styles.themeDot} ${styles.themeDotCyberpunk} ${theme === 'cyberpunk' ? styles.themeDotActive : ''}`} 
-                    onClick={() => setTheme('cyberpunk')}
-                    title="Neon Cyberpunk"
-                  />
-                  <div 
-                    className={`${styles.themeDot} ${styles.themeDotSakura} ${theme === 'sakura' ? styles.themeDotActive : ''}`} 
-                    onClick={() => setTheme('sakura')}
-                    title="Sakura Rose"
-                  />
-                  <div 
-                    className={`${styles.themeDot} ${styles.themeDotOcean} ${theme === 'ocean' ? styles.themeDotActive : ''}`} 
-                    onClick={() => setTheme('ocean')}
-                    title="Deep Ocean"
-                  />
+                {/* Theme selector dots */}
+                <div className={styles.themeContainer}>
+                  <span className={styles.themeLabel}>Theme Accent</span>
+                  <div className={styles.themeSelector}>
+                    <div 
+                      className={`${styles.themeDot} ${styles.themeDotMidnight} ${theme === 'midnight' ? styles.themeDotActive : ''}`} 
+                      onClick={() => setTheme('midnight')}
+                      title="Midnight Purple"
+                    />
+                    <div 
+                      className={`${styles.themeDot} ${styles.themeDotCyberpunk} ${theme === 'cyberpunk' ? styles.themeDotActive : ''}`} 
+                      onClick={() => setTheme('cyberpunk')}
+                      title="Neon Cyberpunk"
+                    />
+                    <div 
+                      className={`${styles.themeDot} ${styles.themeDotSakura} ${theme === 'sakura' ? styles.themeDotActive : ''}`} 
+                      onClick={() => setTheme('sakura')}
+                      title="Sakura Rose"
+                    />
+                    <div 
+                      className={`${styles.themeDot} ${styles.themeDotOcean} ${theme === 'ocean' ? styles.themeDotActive : ''}`} 
+                      onClick={() => setTheme('ocean')}
+                      title="Deep Ocean"
+                    />
+                  </div>
                 </div>
               </div>
             </div>

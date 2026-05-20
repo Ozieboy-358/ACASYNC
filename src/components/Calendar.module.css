@@ -408,3 +408,91 @@
   color: white;
 }
 
+@media (max-width: 1024px) {
+  .calendarContainer {
+    margin: 10px 20px 20px 20px;
+    padding: 20px;
+  }
+
+  .header {
+    margin-bottom: 20px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 768px) {
+  .grid {
+    grid-auto-rows: minmax(75px, 1fr);
+  }
+
+  .dayHeader {
+    padding: 6px 2px;
+    font-size: 9px;
+    letter-spacing: 0.5px;
+  }
+
+  .dayCell, .dayCellEmpty {
+    padding: 6px;
+  }
+
+  .dayNumber {
+    font-size: 11px;
+    margin-bottom: 4px;
+  }
+
+  .eventContainer {
+    gap: 2px;
+  }
+
+  .eventPill {
+    font-size: 8px;
+    padding: 1px 3px;
+    border-radius: 4px;
+  }
+
+  .weekGrid {
+    grid-template-columns: 1fr;
+    min-height: auto;
+    gap: 16px;
+  }
+
+  .weekCol {
+    min-height: auto;
+    padding: 12px;
+  }
+
+  .weekColHeader {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+  }
+
+  .weekDayNum {
+    font-size: 18px;
+    margin-top: 0;
+  }
+
+  .agendaItem {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .agendaRight {
+    width: 100%;
+    justify-content: flex-end;
+    border-top: 1px solid var(--card-border);
+    padding-top: 8px;
+  }
+}
+
+

@@ -133,6 +133,7 @@ button {
 
 .scroll-thin::-webkit-scrollbar {
   width: 4px;
+  height: 4px;
 }
 
 .scroll-thin::-webkit-scrollbar-track {
@@ -147,3 +148,11 @@ button {
 .scroll-thin::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.2);
 }
+
+.app-container {
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+

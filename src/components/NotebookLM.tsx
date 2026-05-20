@@ -916,7 +916,7 @@ No markdown formatting or extra text outside the JSON array.`;
   };
 
   return (
-    <div className={styles.container}>
+    <div className={`${styles.container} glass`}>
       {/* 1. Left Source Panel */}
       <aside className={styles.sourcePanel}>
         <div className={styles.panelHeader}>
