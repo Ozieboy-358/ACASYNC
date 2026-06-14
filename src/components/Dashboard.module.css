@@ -311,3 +311,155 @@
   }
 }
 
+/* What-If Calculator & GPA Planner Styles */
+.whatIfSection {
+  padding: 24px;
+}
+
+.whatIfGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+  margin-top: 20px;
+}
+
+@media (max-width: 768px) {
+  .whatIfGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.whatIfCol {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.whatIfClassCard {
+  padding: 20px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--card-border);
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.whatIfHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--card-border);
+  padding-bottom: 10px;
+}
+
+.whatIfClassTitle {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.whatIfClassGrade {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.sliderList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sliderItem {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sliderLabelRow {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.sliderInputRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sliderRange {
+  flex: 1;
+  accent-color: var(--accent);
+  height: 6px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.sliderValBox {
+  width: 45px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.gpaPlannerBox {
+  padding: 20px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--card-border);
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.plannerInputRow {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-bottom: 10px;
+}
+
+.plannerInputBox {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.plannerInputLabel {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.plannerInput {
+  width: 100px;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--card-border);
+  color: white;
+  font-size: 16px;
+  font-weight: 700;
+  outline: none;
+}
+
+.plannerResultBox {
+  padding: 15px;
+  border-radius: 8px;
+  background: rgba(139, 92, 246, 0.05);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--foreground);
+}
+
+.plannerResultBox h4 {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+
+

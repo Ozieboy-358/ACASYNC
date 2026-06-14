@@ -33,4 +33,16 @@ export interface NotebookSource {
   addedAt: string;
 }
 
+export interface Flashcard {
+  id: string;
+  classId: string;
+  question: string;
+  answer: string;
+  interval: number; // Days until next review
+  easeFactor: number; // SM-2 ease factor
+  repetitions: number; // Number of consecutive reviews
+  nextReviewDate: string; // YYYY-MM-DD format
+}
+
+
 

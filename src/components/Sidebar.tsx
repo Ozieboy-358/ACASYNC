@@ -19,15 +19,19 @@ export default function Sidebar() {
     currentView, 
     setCurrentView,
     theme,
-    setTheme
+    setTheme,
+    geminiKey
   } = useAcademic();
 
   const [isClassModalOpen, setIsClassModalOpen] = useState(false);
   const [isEditClassModalOpen, setIsEditClassModalOpen] = useState(false);
   const [isD2LModalOpen, setIsD2LModalOpen] = useState(false);
+  const [isSyllabusModalOpen, setIsSyllabusModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [selectedClass, setSelectedClass] = useState<Class | null>(null);
   const [activeTab, setActiveTab] = useState<'materials' | 'grades' | 'notebook'>('materials');
+  const [syllabusText, setSyllabusText] = useState("");
+  const [isParsingSyllabus, setIsParsingSyllabus] = useState(false);
   
   // Class add form state
   const [newClassName, setNewClassName] = useState("");
@@ -84,6 +88,141 @@ export default function Sidebar() {
     } finally {
       setIsSyncing(false);
     }
+  };
+
+  const handleSyllabusSync = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!syllabusText.trim()) return;
+
+    setIsParsingSyllabus(true);
+    try {
+      if (geminiKey) {
+        const prompt = `You are an academic syllabus parser. Analyze the syllabus text below and extract:
+1. Course Name (e.g. "Linear Algebra", "Introduction to Biology")
+2. Course Credits (as a number, e.g. 3 or 4. If not found, guess 3)
+3. Course Color (a hexadecimal color code, e.g. "#8b5cf6", "#3b82f6", "#10b981", "#ff8c00". Choose a distinct, premium-looking color)
+4. All assignments, exams, quizzes, or materials, with their respective dates. Convert dates into YYYY-MM-DD format (use current year 2026 if not specified).
+For each event, also extract:
+- Type: "assignment", "exam", "quiz", or "material"
+- Weight (as a percentage, e.g. 10. If not specified, choose standard: homeworks 5%, quizzes 10%, midterm 25%, final exam 30%-40%)
+- Description: details about the event
+- TotalScore: e.g. 100
+
+Format your reply strictly as a JSON object of this structure:
+{
+  "className": "...",
+  "credits": 3,
+  "color": "#...",
+  "events": [
+    {
+      "title": "Assignment 1",
+      "type": "assignment",
+      "date": "2026-09-20",
+      "startTime": "23:59",
+      "weight": 5,
+      "totalScore": 100,
+      "description": "..."
+    }
+  ]
+}
+
+No markdown tags or formatting outside the JSON block.
+
+Syllabus Text:
+${syllabusText}`;
+
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+        });
+
+        if (!response.ok) throw new Error("Gemini API call failed");
+        
+        const data = await response.json();
+        const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        const cleanJson = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
+        const parsed = JSON.parse(cleanJson);
+
+        const classId = addClass({
+          name: parsed.className || "Syllabus Import",
+          color: parsed.color || "#8b5cf6",
+          credits: parsed.credits || 3
+        });
+
+        if (parsed.events && Array.isArray(parsed.events)) {
+          parsed.events.forEach((ev: any) => {
+            addEvent({
+              classId,
+              title: ev.title,
+              date: ev.date,
+              type: ev.type || "assignment",
+              description: ev.description || "",
+              weight: ev.weight || 5,
+              totalScore: ev.totalScore || 100,
+              startTime: ev.startTime || undefined,
+              endTime: ev.endTime || undefined,
+              completed: false
+            });
+          });
+        }
+
+        alert(`Successfully imported "${parsed.className}" with ${parsed.events?.length || 0} events!`);
+        setIsSyllabusModalOpen(false);
+        setSyllabusText("");
+      } else {
+        // Fallback offline generator
+        alert("Gemini Developer Key is not configured. Creating a mock class based on key syllabus elements.");
+        
+        // Let's create a basic class
+        const classId = addClass({
+          name: "Syllabus Class (Offline)",
+          color: "#0ea5e9",
+          credits: 3
+        });
+
+        const today = new Date();
+        const dates = [7, 14, 21, 30];
+        const types: Array<'assignment'|'exam'|'quiz'> = ['assignment', 'quiz', 'assignment', 'exam'];
+        const titles = ["Homework 1", "Syllabus Quiz", "Homework 2", "Midterm Exam"];
+        const weights = [5, 10, 5, 25];
+
+        dates.forEach((dOffset, idx) => {
+          const date = new Date();
+          date.setDate(today.getDate() + dOffset);
+          addEvent({
+            classId,
+            title: titles[idx],
+            date: date.toISOString().split('T')[0],
+            type: types[idx],
+            weight: weights[idx],
+            totalScore: 100,
+            completed: false
+          });
+        });
+
+        alert("Successfully imported mock class and schedule!");
+        setIsSyllabusModalOpen(false);
+        setSyllabusText("");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Failed to parse syllabus. Make sure it is clear or check your Gemini Key.");
+    } finally {
+      setIsParsingSyllabus(false);
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      setSyllabusText(text);
+    };
+    reader.readAsText(file);
   };
 
   const handleAddClass = (e: React.FormEvent) => {
@@ -393,6 +532,16 @@ export default function Sidebar() {
               </nav>
 
               <div className={styles.footer}>
+                <button className={`${styles.syncBtn} glass-interactive`} onClick={() => setIsSyllabusModalOpen(true)} style={{ marginBottom: '10px' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <line x1="16" y1="13" x2="8" y2="13" />
+                    <line x1="16" y1="17" x2="8" y2="17" />
+                    <polyline points="10 9 9 9 8 9" />
+                  </svg>
+                  AI Syllabus Import
+                </button>
                 <button className={`${styles.syncBtn} glass-interactive`} onClick={() => setIsD2LModalOpen(true)} style={{ marginBottom: '10px' }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M12 2v20m10-10H2" />
@@ -437,6 +586,57 @@ export default function Sidebar() {
           </>
         )}
       </aside>
+
+      <Modal 
+        isOpen={isSyllabusModalOpen} 
+        onClose={() => setIsSyllabusModalOpen(false)} 
+        title="AI Syllabus Scheduler"
+      >
+        <form onSubmit={handleSyllabusSync} className={styles.form}>
+          <p className={styles.instructionText}>
+            Upload a syllabus document or paste its text. We'll use Gemini to automatically create the course, configure grade weights, and schedule all tests and assignments on your calendar.
+          </p>
+          <div className={styles.formGroup}>
+            <label>Upload Syllabus file (.txt, .md)</label>
+            <input 
+              type="file" 
+              accept=".txt,.md,.html" 
+              onChange={handleFileUpload}
+              className={styles.input}
+              style={{ padding: '8px 0' }}
+            />
+          </div>
+          <div className={styles.formGroup}>
+            <label>Or Paste Syllabus Text</label>
+            <textarea 
+              value={syllabusText} 
+              onChange={(e) => setSyllabusText(e.target.value)}
+              placeholder="Paste the syllabus outline, course schedule, and grading weights here..."
+              className={styles.input}
+              style={{ minHeight: '180px', resize: 'vertical', fontFamily: 'inherit', padding: '10px' }}
+              required
+            />
+          </div>
+          <div className={styles.modalActions} style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+            <button 
+              type="button" 
+              className={styles.cancelBtn} 
+              onClick={() => setIsSyllabusModalOpen(false)}
+              style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid var(--card-border)', background: 'none', color: 'var(--text-secondary)' }}
+            >
+              Cancel
+            </button>
+            <button 
+              type="submit" 
+              className="btn-primary" 
+              disabled={isParsingSyllabus || !syllabusText.trim()}
+              style={{ flex: 1 }}
+            >
+              {isParsingSyllabus ? "Processing via AI..." : "Build Schedule"}
+            </button>
+          </div>
+        </form>
+      </Modal>
 
       <Modal 
         isOpen={isD2LModalOpen} 

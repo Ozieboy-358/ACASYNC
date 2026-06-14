@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Class, AcademicEvent, NotebookSource } from './types';
+import { Class, AcademicEvent, NotebookSource, Flashcard } from './types';
 
 // Helper to generate realistic sample study sources when a class is loaded or created
 const generateDefaultSources = (classId: string, className: string): NotebookSource[] => {
@@ -207,11 +207,76 @@ Core Study Areas:
   }
 };
 
+const generateDefaultFlashcards = (classId: string, className: string): Flashcard[] => {
+  const name = className.toLowerCase();
+  const todayStr = new Date().toISOString().split('T')[0];
+  if (name.includes('phys')) {
+    return [
+      {
+        id: `${classId}-fc1`,
+        classId,
+        question: "What is Newton's Second Law of Motion?",
+        answer: "F = m * a. The net force on an object is directly proportional to its mass and acceleration.",
+        interval: 1,
+        easeFactor: 2.5,
+        repetitions: 0,
+        nextReviewDate: todayStr
+      },
+      {
+        id: `${classId}-fc2`,
+        classId,
+        question: "What is the formula for centripetal acceleration?",
+        answer: "a_c = v^2 / r, directed towards the center of the circular path.",
+        interval: 1,
+        easeFactor: 2.5,
+        repetitions: 0,
+        nextReviewDate: todayStr
+      }
+    ];
+  } else if (name.includes('computer') || name.includes('cs') || name.includes('algorithm') || name.includes('code')) {
+    return [
+      {
+        id: `${classId}-fc1`,
+        classId,
+        question: "What is the time complexity of Binary Search?",
+        answer: "O(log n) because the search space is halved in each step.",
+        interval: 1,
+        easeFactor: 2.5,
+        repetitions: 0,
+        nextReviewDate: todayStr
+      },
+      {
+        id: `${classId}-fc2`,
+        classId,
+        question: "What is the difference between a Stack and a Queue?",
+        answer: "Stack is LIFO (Last In First Out) whereas Queue is FIFO (First In First Out).",
+        interval: 1,
+        easeFactor: 2.5,
+        repetitions: 0,
+        nextReviewDate: todayStr
+      }
+    ];
+  }
+  return [
+    {
+      id: `${classId}-fc1`,
+      classId,
+      question: `What is the core focus of ${className}?`,
+      answer: "Refer to the syllabus overview and key terms in the introductory lecture.",
+      interval: 1,
+      easeFactor: 2.5,
+      repetitions: 0,
+      nextReviewDate: todayStr
+    }
+  ];
+};
+
 interface AcademicContextType {
   classes: Class[];
   events: AcademicEvent[];
   sources: NotebookSource[];
-  addClass: (cls: Omit<Class, 'id'>) => void;
+  flashcards: Flashcard[];
+  addClass: (cls: Omit<Class, 'id'>) => string;
   addEvent: (event: Omit<AcademicEvent, 'id'>) => void;
   updateEvent: (event: AcademicEvent) => void;
   deleteEvent: (id: string) => void;
@@ -219,10 +284,15 @@ interface AcademicContextType {
   deleteClass: (id: string) => void;
   addSource: (source: Omit<NotebookSource, 'id' | 'addedAt'>) => void;
   deleteSource: (id: string) => void;
+  addFlashcard: (fc: Omit<Flashcard, 'id'>) => void;
+  updateFlashcard: (fc: Flashcard) => void;
+  deleteFlashcard: (id: string) => void;
   currentView: 'calendar' | 'dashboard' | 'notebook';
   setCurrentView: (view: 'calendar' | 'dashboard' | 'notebook') => void;
   theme: string;
   setTheme: (theme: string) => void;
+  geminiKey: string;
+  setGeminiKey: (key: string) => void;
 }
 
 const AcademicContext = createContext<AcademicContextType | undefined>(undefined);
@@ -231,18 +301,24 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
   const [classes, setClasses] = useState<Class[]>([]);
   const [events, setEvents] = useState<AcademicEvent[]>([]);
   const [sources, setSources] = useState<NotebookSource[]>([]);
+  const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
   const [currentView, setCurrentView] = useState<'calendar' | 'dashboard' | 'notebook'>('calendar');
   const [theme, setTheme] = useState<string>('midnight');
+  const [geminiKey, setGeminiKey] = useState<string>('');
 
   useEffect(() => {
     const savedClasses = localStorage.getItem('aca_classes');
     const savedEvents = localStorage.getItem('aca_events');
     const savedSources = localStorage.getItem('aca_sources');
+    const savedFlashcards = localStorage.getItem('aca_flashcards');
     const savedTheme = localStorage.getItem('aca_theme') || 'midnight';
+    const savedKey = localStorage.getItem('aca_gemini_key') || '';
     
     if (savedClasses) setClasses(JSON.parse(savedClasses));
     if (savedEvents) setEvents(JSON.parse(savedEvents));
     if (savedSources) setSources(JSON.parse(savedSources));
+    if (savedFlashcards) setFlashcards(JSON.parse(savedFlashcards));
+    if (savedKey) setGeminiKey(savedKey);
     
     setTheme(savedTheme);
     document.body.setAttribute('data-theme', savedTheme);
@@ -262,11 +338,19 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
   }, [sources]);
 
   useEffect(() => {
+    localStorage.setItem('aca_flashcards', JSON.stringify(flashcards));
+  }, [flashcards]);
+
+  useEffect(() => {
     localStorage.setItem('aca_theme', theme);
     document.body.setAttribute('data-theme', theme);
   }, [theme]);
 
-  // Onboarding effect: Auto-generate default notebook sources for existing classes if sources are empty
+  useEffect(() => {
+    localStorage.setItem('aca_gemini_key', geminiKey);
+  }, [geminiKey]);
+
+  // Onboarding effect: Auto-generate default notebook sources and flashcards for existing classes
   useEffect(() => {
     if (classes.length > 0 && sources.length === 0) {
       let defaultSources: NotebookSource[] = [];
@@ -277,14 +361,28 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
     }
   }, [classes, sources]);
 
-  const addClass = (cls: Omit<Class, 'id'>) => {
+  useEffect(() => {
+    if (classes.length > 0 && flashcards.length === 0) {
+      let defaultFCs: Flashcard[] = [];
+      classes.forEach(c => {
+        defaultFCs = [...defaultFCs, ...generateDefaultFlashcards(c.id, c.name)];
+      });
+      setFlashcards(defaultFCs);
+    }
+  }, [classes, flashcards]);
+
+  const addClass = (cls: Omit<Class, 'id'>): string => {
     const classId = Math.random().toString(36).substr(2, 9);
     const newClass = { ...cls, id: classId };
     setClasses([...classes, newClass]);
     
-    // Auto-generate default sources for new classes
+    // Auto-generate default sources & flashcards for new classes
     const defaultSources = generateDefaultSources(classId, cls.name);
     setSources(prev => [...prev, ...defaultSources]);
+
+    const defaultFCs = generateDefaultFlashcards(classId, cls.name);
+    setFlashcards(prev => [...prev, ...defaultFCs]);
+    return classId;
   };
 
   const addEvent = (event: Omit<AcademicEvent, 'id'>) => {
@@ -308,6 +406,7 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
     setClasses(classes.filter(c => c.id !== id));
     setEvents(events.filter(e => e.classId !== id)); // Clean up events for deleted class
     setSources(prev => prev.filter(s => s.classId !== id)); // Clean up sources for deleted class
+    setFlashcards(prev => prev.filter(f => f.classId !== id)); // Clean up flashcards for deleted class
   };
 
   const addSource = (source: Omit<NotebookSource, 'id' | 'addedAt'>) => {
@@ -323,11 +422,28 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
     setSources(prev => prev.filter(s => s.id !== id));
   };
 
+  const addFlashcard = (fc: Omit<Flashcard, 'id'>) => {
+    const newFC: Flashcard = {
+      ...fc,
+      id: Math.random().toString(36).substr(2, 9)
+    };
+    setFlashcards(prev => [...prev, newFC]);
+  };
+
+  const updateFlashcard = (updated: Flashcard) => {
+    setFlashcards(prev => prev.map(f => f.id === updated.id ? updated : f));
+  };
+
+  const deleteFlashcard = (id: string) => {
+    setFlashcards(prev => prev.filter(f => f.id !== id));
+  };
+
   return (
     <AcademicContext.Provider value={{ 
       classes, 
       events, 
       sources,
+      flashcards,
       addClass, 
       addEvent,
       updateEvent,
@@ -336,10 +452,15 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
       deleteClass,
       addSource,
       deleteSource,
+      addFlashcard,
+      updateFlashcard,
+      deleteFlashcard,
       currentView,
       setCurrentView,
       theme,
-      setTheme
+      setTheme,
+      geminiKey,
+      setGeminiKey
     }}>
       {children}
     </AcademicContext.Provider>

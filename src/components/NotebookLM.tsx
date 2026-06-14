@@ -24,7 +24,19 @@ interface Citation {
 }
 
 export default function NotebookLM() {
-  const { classes, sources, addSource, deleteSource, setCurrentView } = useAcademic();
+  const { 
+    classes, 
+    sources, 
+    addSource, 
+    deleteSource, 
+    setCurrentView,
+    flashcards,
+    addFlashcard,
+    updateFlashcard,
+    deleteFlashcard,
+    geminiKey,
+    setGeminiKey
+  } = useAcademic();
 
   // Selection states
   const [selectedClassId, setSelectedClassId] = useState<string>("all");
@@ -32,7 +44,7 @@ export default function NotebookLM() {
   
   // Tab states
   const [activeTab, setActiveTab] = useState<"chat" | "studio" | "audio">("chat");
-  const [studioSubTab, setStudioSubTab] = useState<"guide" | "faq" | "quiz">("guide");
+  const [studioSubTab, setStudioSubTab] = useState<"guide" | "faq" | "quiz" | "flashcards">("guide");
 
   // Chat states
   const [chatQuery, setChatQuery] = useState("");
@@ -53,7 +65,6 @@ export default function NotebookLM() {
   const [newSourceContent, setNewSourceContent] = useState("");
 
   // Gemini API Key config states
-  const [geminiKey, setGeminiKey] = useState("");
   const [isConfiguringKey, setIsConfiguringKey] = useState(false);
   const [tempKeyInput, setTempKeyInput] = useState("");
 
@@ -71,6 +82,14 @@ export default function NotebookLM() {
   const [quizScore, setQuizScore] = useState(0);
   const [quizSeed, setQuizSeed] = useState(0); // Trigger re-generation of quiz questions
 
+  // Flashcard States
+  const [currentCardIdx, setCurrentCardIdx] = useState(0);
+  const [isCardFlipped, setIsCardFlipped] = useState(false);
+  const [fcStudyMode, setFcStudyMode] = useState<"review" | "list" | "add">("review");
+  const [newCardQ, setNewCardQ] = useState("");
+  const [newCardA, setNewCardA] = useState("");
+  const [isGeneratingFC, setIsGeneratingFC] = useState(false);
+
   // Scrolling refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scriptScrollRef = useRef<HTMLDivElement>(null);
@@ -86,7 +105,6 @@ export default function NotebookLM() {
       setSelectedClassId(savedClassId);
       
       const savedKey = localStorage.getItem("aca_gemini_key") || "";
-      setGeminiKey(savedKey);
       setTempKeyInput(savedKey);
     }
   }, []);
@@ -696,7 +714,197 @@ Do not invent facts. If the answer is not in the sources, say: "I cannot find a 
   };
 
   // -------------------------------------------------------------
+  // FLASHCARDS GENERATION & SM-2 SPACED REPETITION STUDY
+  // -------------------------------------------------------------
+  const dueFlashcards = useMemo(() => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    return flashcards.filter(f => {
+      const matchesCourse = selectedClassId === "all" || f.classId === selectedClassId;
+      const isDue = f.nextReviewDate <= todayStr;
+      return matchesCourse && isDue;
+    });
+  }, [flashcards, selectedClassId]);
+
+  const courseFlashcards = useMemo(() => {
+    return flashcards.filter(f => selectedClassId === "all" || f.classId === selectedClassId);
+  }, [flashcards, selectedClassId]);
+
+  const handleRateCard = (card: any, score: number) => {
+    let repetitions = card.repetitions;
+    let easeFactor = card.easeFactor;
+    let interval = card.interval;
+
+    if (score === 0) {
+      repetitions = 0;
+      interval = 1;
+    } else {
+      if (repetitions === 0) {
+        interval = 1;
+      } else if (repetitions === 1) {
+        interval = 4;
+      } else {
+        interval = Math.round(interval * easeFactor);
+      }
+      repetitions++;
+    }
+
+    const quality = score + 2; // maps 0-3 to quality 2-5
+    easeFactor = easeFactor + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02));
+    easeFactor = Math.max(1.3, easeFactor);
+
+    const nextDate = new Date();
+    nextDate.setDate(nextDate.getDate() + interval);
+    const nextReviewDate = nextDate.toISOString().split('T')[0];
+
+    updateFlashcard({
+      ...card,
+      repetitions,
+      easeFactor,
+      interval,
+      nextReviewDate
+    });
+
+    setIsCardFlipped(false);
+    setCurrentCardIdx(prev => prev + 1);
+  };
+
+  const generateOfflineFlashcards = () => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const generated: Array<{question: string, answer: string}> = [];
+    
+    selectedSources.forEach(source => {
+      const paragraphs = source.content.split("\n").filter(p => p.trim().length > 30);
+      paragraphs.slice(0, 3).forEach(p => {
+        if (p.includes(":")) {
+          const parts = p.split(":");
+          const q = `Define: ${parts[0].trim()}`;
+          const a = parts.slice(1).join(":").trim();
+          generated.push({ question: q, answer: a });
+        } else {
+          const q = `From "${source.title}": explain this statement: "${p.slice(0, 60)}..."`;
+          const a = p;
+          generated.push({ question: q, answer: a });
+        }
+      });
+    });
+
+    if (generated.length === 0) {
+      generated.push({
+        question: "What is active recall?",
+        answer: "Active recall is a study method where you test your memory by retrieving information rather than passive reading."
+      });
+      generated.push({
+        question: "What is spaced repetition?",
+        answer: "Spaced repetition is a learning technique where review sessions are scheduled at increasing intervals to optimize memory retention."
+      });
+    }
+
+    generated.forEach(c => {
+      addFlashcard({
+        classId: selectedClassId === "all" ? "global" : selectedClassId,
+        question: c.question,
+        answer: c.answer,
+        interval: 1,
+        easeFactor: 2.5,
+        repetitions: 0,
+        nextReviewDate: todayStr
+      });
+    });
+    alert(`Successfully generated ${generated.length} offline flashcards!`);
+  };
+
+  const generateFlashcardsWithGemini = async () => {
+    if (selectedSources.length === 0) {
+      alert("Please select at least one source document to generate flashcards.");
+      return;
+    }
+    if (selectedClassId === "all") {
+      alert("Please select a specific course on the left to associate the flashcards with.");
+      return;
+    }
+
+    setIsGeneratingFC(true);
+
+    try {
+      if (geminiKey) {
+        const textSources = selectedSources.map(s => `[${s.title}]\n${s.content}`).join("\n\n");
+        const prompt = `Based on the following source materials, generate a list of 5 to 10 high-quality study flashcards for active recall.
+Each flashcard must contain a clear, concise question and a detailed but direct answer.
+Avoid simple yes/no questions; target core concepts, definitions, or equations.
+
+Sources:
+${textSources}
+
+Format your reply strictly as a JSON array of objects, where each object has keys "question" and "answer".
+Do not include any markdown syntax, explanation, or code blocks outside the JSON array.`;
+
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+        });
+        
+        if (!response.ok) throw new Error("API call failed");
+        
+        const data = await response.json();
+        const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        const cleanJson = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
+        
+        const cardsList = JSON.parse(cleanJson);
+        const todayStr = new Date().toISOString().split('T')[0];
+        
+        cardsList.forEach((c: { question: string, answer: string }) => {
+          addFlashcard({
+            classId: selectedClassId,
+            question: c.question,
+            answer: c.answer,
+            interval: 1,
+            easeFactor: 2.5,
+            repetitions: 0,
+            nextReviewDate: todayStr
+          });
+        });
+        alert(`Successfully generated ${cardsList.length} flashcards via Gemini!`);
+      } else {
+        generateOfflineFlashcards();
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Failed to generate flashcards using Gemini API. Generating offline keywords fallback instead.");
+      generateOfflineFlashcards();
+    } finally {
+      setIsGeneratingFC(false);
+      setCurrentCardIdx(0);
+      setIsCardFlipped(false);
+    }
+  };
+
+  const handleAddManualCard = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCardQ.trim() || !newCardA.trim()) return;
+    if (selectedClassId === "all") {
+      alert("Please select a specific course on the left to add a flashcard.");
+      return;
+    }
+    const todayStr = new Date().toISOString().split('T')[0];
+    addFlashcard({
+      classId: selectedClassId,
+      question: newCardQ.trim(),
+      answer: newCardA.trim(),
+      interval: 1,
+      easeFactor: 2.5,
+      repetitions: 0,
+      nextReviewDate: todayStr
+    });
+    setNewCardQ("");
+    setNewCardA("");
+    setFcStudyMode("list");
+    alert("Flashcard added successfully!");
+  };
+
+  // -------------------------------------------------------------
   // AUDIO OVERVIEW GENERATOR (PODCAST PLAYER)
+
   // -------------------------------------------------------------
   const generatePodcastOverview = async () => {
     if (selectedSources.length === 0) {
@@ -1192,6 +1400,16 @@ No markdown formatting or extra text outside the JSON array.`;
                 >
                   ✏️ Practice Quiz
                 </button>
+                <button 
+                  className={`${styles.studioTabBtn} ${studioSubTab === "flashcards" ? styles.studioTabBtnActive : ""}`}
+                  onClick={() => {
+                    setStudioSubTab("flashcards");
+                    setCurrentCardIdx(0);
+                    setIsCardFlipped(false);
+                  }}
+                >
+                  ⚡ Active Flashcards
+                </button>
               </div>
 
               <div className={`${styles.studioContent} scroll-thin`}>
@@ -1318,6 +1536,217 @@ No markdown formatting or extra text outside the JSON array.`;
                             </>
                           )}
                         </div>
+                      </div>
+                    )}
+
+                    {/* SUBTAB D: FLASHCARDS */}
+                    {studioSubTab === "flashcards" && (
+                      <div className={styles.flashcardsArea}>
+                        {/* Sub-sub tab switcher: Review | Manage / List | Add */}
+                        <div className={styles.studioTabs} style={{ marginBottom: '10px', width: '100%', maxWidth: '480px' }}>
+                          <button 
+                            className={`${styles.studioTabBtn} ${fcStudyMode === "review" ? styles.studioTabBtnActive : ""}`}
+                            onClick={() => { setFcStudyMode("review"); setCurrentCardIdx(0); setIsCardFlipped(false); }}
+                          >
+                            🧠 Study Due ({dueFlashcards.length})
+                          </button>
+                          <button 
+                            className={`${styles.studioTabBtn} ${fcStudyMode === "list" ? styles.studioTabBtnActive : ""}`}
+                            onClick={() => setFcStudyMode("list")}
+                          >
+                            📋 View All ({courseFlashcards.length})
+                          </button>
+                          <button 
+                            className={`${styles.studioTabBtn} ${fcStudyMode === "add" ? styles.studioTabBtnActive : ""}`}
+                            onClick={() => setFcStudyMode("add")}
+                          >
+                            ➕ Add Card
+                          </button>
+                        </div>
+
+                        {/* MODE 1: STUDY DUE CARDS */}
+                        {fcStudyMode === "review" && (
+                          <>
+                            {dueFlashcards.length === 0 ? (
+                              <div className={styles.noSelectionState} style={{ padding: '40px 0' }}>
+                                <span>🎉</span>
+                                <h3>All caught up!</h3>
+                                <p>You have no cards due for review in this course.</p>
+                                <button 
+                                  className="btn-primary" 
+                                  onClick={generateFlashcardsWithGemini}
+                                  disabled={isGeneratingFC || selectedSources.length === 0}
+                                  style={{ marginTop: '15px' }}
+                                >
+                                  {isGeneratingFC ? "Generating..." : "Generate AI Flashcards from Sources"}
+                                </button>
+                              </div>
+                            ) : currentCardIdx >= dueFlashcards.length ? (
+                              <div className={styles.noSelectionState} style={{ padding: '40px 0' }}>
+                                <span>🏆</span>
+                                <h3>Session Complete!</h3>
+                                <p>You reviewed {dueFlashcards.length} cards in this session.</p>
+                                <button className="btn-primary" style={{ marginTop: '15px' }} onClick={() => setCurrentCardIdx(0)}>
+                                  Review Again
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <div className={styles.statsOverview}>
+                                  <div className={styles.statItem}>
+                                    <div className={styles.statNum}>{dueFlashcards.length - currentCardIdx}</div>
+                                    <div className={styles.statText}>Remaining</div>
+                                  </div>
+                                  <div className={styles.statItem}>
+                                    <div className={styles.statNum}>{courseFlashcards.length}</div>
+                                    <div className={styles.statText}>Total Deck</div>
+                                  </div>
+                                </div>
+
+                                <div 
+                                  className={styles.cardWrapper} 
+                                  onClick={() => setIsCardFlipped(!isCardFlipped)}
+                                >
+                                  <div className={`${styles.cardInner} ${isCardFlipped ? styles.cardFlipped : ""}`}>
+                                    {/* Front Side */}
+                                    <div className={`${styles.cardFace} ${styles.cardFront}`}>
+                                      <div className={styles.cardLabel}>Question ({currentCardIdx + 1} of {dueFlashcards.length})</div>
+                                      <div className={styles.cardText}>{dueFlashcards[currentCardIdx].question}</div>
+                                      <div style={{ color: 'var(--text-secondary)', fontSize: '11px', marginTop: '30px' }}>
+                                        Click card to reveal answer
+                                      </div>
+                                    </div>
+
+                                    {/* Back Side */}
+                                    <div className={`${styles.cardFace} ${styles.cardBack}`}>
+                                      <div className={styles.cardLabel}>Answer</div>
+                                      <div className={styles.cardText}>{dueFlashcards[currentCardIdx].answer}</div>
+                                      <div style={{ color: 'var(--text-secondary)', fontSize: '11px', marginTop: '30px' }}>
+                                        Click card to see question again
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Quality scoring controls */}
+                                {isCardFlipped && (
+                                  <div className={styles.ratingRow}>
+                                    <button 
+                                      className={`${styles.ratingBtn} ${styles.againBtn}`}
+                                      onClick={(e) => { e.stopPropagation(); handleRateCard(dueFlashcards[currentCardIdx], 0); }}
+                                    >
+                                      Again (1d)
+                                    </button>
+                                    <button 
+                                      className={`${styles.ratingBtn} ${styles.hardBtn}`}
+                                      onClick={(e) => { e.stopPropagation(); handleRateCard(dueFlashcards[currentCardIdx], 1); }}
+                                    >
+                                      Hard (4d)
+                                    </button>
+                                    <button 
+                                      className={`${styles.ratingBtn} ${styles.goodBtn}`}
+                                      onClick={(e) => { e.stopPropagation(); handleRateCard(dueFlashcards[currentCardIdx], 2); }}
+                                    >
+                                      Good (8d)
+                                    </button>
+                                    <button 
+                                      className={`${styles.ratingBtn} ${styles.easyBtn}`}
+                                      onClick={(e) => { e.stopPropagation(); handleRateCard(dueFlashcards[currentCardIdx], 3); }}
+                                    >
+                                      Easy (16d)
+                                    </button>
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </>
+                        )}
+
+                        {/* MODE 2: VIEW ALL COURSE FLASHCARDS */}
+                        {fcStudyMode === "list" && (
+                          <div style={{ width: '100%' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <h3>All Course Flashcards</h3>
+                              <button 
+                                className="btn-primary" 
+                                onClick={generateFlashcardsWithGemini}
+                                disabled={isGeneratingFC || selectedSources.length === 0}
+                                style={{ padding: '6px 12px', fontSize: '12px' }}
+                              >
+                                {isGeneratingFC ? "Generating..." : "Generate AI Flashcards"}
+                              </button>
+                            </div>
+
+                            {courseFlashcards.length === 0 ? (
+                              <p style={{ color: 'var(--text-secondary)', fontSize: '13px', margin: '20px 0' }}>
+                                No flashcards created yet for this course. Add one manually or click 'Generate AI Flashcards'!
+                              </p>
+                            ) : (
+                              <div className={styles.flashcardListGrid}>
+                                {courseFlashcards.map(fc => {
+                                  const todayStr = new Date().toISOString().split('T')[0];
+                                  const isDue = fc.nextReviewDate <= todayStr;
+                                  return (
+                                    <div key={fc.id} className={styles.minCard}>
+                                      <div>
+                                        <div className={styles.minCardQ}>{fc.question}</div>
+                                        <div className={styles.minCardA}>{fc.answer}</div>
+                                      </div>
+                                      <div className={styles.minCardFooter}>
+                                        <span className={isDue ? styles.cardDueBadge : styles.cardNotDueBadge}>
+                                          {isDue ? "Review Due" : `Next: ${fc.nextReviewDate}`}
+                                        </span>
+                                        <button 
+                                          className={styles.cardDeleteBtn}
+                                          onClick={() => {
+                                            if (confirm("Delete this flashcard?")) {
+                                              deleteFlashcard(fc.id);
+                                            }
+                                          }}
+                                        >
+                                          Delete
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* MODE 3: ADD MANUAL CARD FORM */}
+                        {fcStudyMode === "add" && (
+                          <form onSubmit={handleAddManualCard} className={styles.manualCardForm}>
+                            <h3>Create Custom Flashcard</h3>
+                            <div className={styles.formGroup}>
+                              <label htmlFor="q-input">Question / Prompt</label>
+                              <input 
+                                id="q-input"
+                                type="text"
+                                className={styles.formInput}
+                                placeholder="e.g. What is the time complexity of QuickSort?"
+                                value={newCardQ}
+                                onChange={(e) => setNewCardQ(e.target.value)}
+                                required
+                              />
+                            </div>
+                            <div className={styles.formGroup}>
+                              <label htmlFor="a-input">Answer</label>
+                              <textarea 
+                                id="a-input"
+                                className={styles.formTextarea}
+                                placeholder="e.g. O(n log n) average, O(n^2) worst case if pivots are chosen poorly."
+                                value={newCardA}
+                                onChange={(e) => setNewCardA(e.target.value)}
+                                required
+                              />
+                            </div>
+                            <button type="submit" className="btn-primary" style={{ marginTop: '10px' }}>
+                              Save Flashcard
+                            </button>
+                          </form>
+                        )}
                       </div>
                     )}
                   </>
