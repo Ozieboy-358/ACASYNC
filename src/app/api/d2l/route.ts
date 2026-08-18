@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import axios from 'axios';
-const ICAL = require('ical.js');
+
+const rawICAL = require('ical.js');
+const ICAL = rawICAL.default || rawICAL;
 
 export const dynamic = 'force-dynamic';
 
@@ -12,7 +14,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'URL is required' }, { status: 400 });
   }
 
-  // Handle webcal:// links
+  // Clean up URL formatting
+  url = url.trim();
   if (url.startsWith('webcal://')) {
     url = url.replace('webcal://', 'https://');
   }
@@ -23,7 +26,7 @@ export async function GET(request: NextRequest) {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/calendar, text/plain, */*'
       },
-      timeout: 12000
+      timeout: 15000
     });
 
     const jcalData = ICAL.parse(response.data);
@@ -46,13 +49,19 @@ export async function GET(request: NextRequest) {
       let type: 'assignment' | 'exam' | 'quiz' | 'material' = 'assignment';
       if (summaryLower.includes('quiz')) type = 'quiz';
       else if (summaryLower.includes('exam') || summaryLower.includes('test') || summaryLower.includes('midterm') || summaryLower.includes('final')) type = 'exam';
-      else if (summaryLower.includes('lecture') || summaryLower.includes('slide') || summaryLower.includes('reading')) type = 'material';
+      else if (summaryLower.includes('lecture') || summaryLower.includes('slide') || summaryLower.includes('reading') || summaryLower.includes('session') || summaryLower.includes('film')) type = 'material';
+
+      // Clean HTML tags from description if present
+      let cleanDesc = event.description || '';
+      if (cleanDesc.includes('<')) {
+        cleanDesc = cleanDesc.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      }
 
       return {
         id: event.uid || Math.random().toString(36).substring(2),
         title: event.summary || 'Untitled Event',
         date: eventDate,
-        description: event.description || '',
+        description: cleanDesc,
         location: event.location || '',
         type
       };
@@ -61,6 +70,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ events, count: events.length });
   } catch (error: any) {
     console.error('Error fetching D2L iCal feed:', error?.message || error);
-    return NextResponse.json({ error: 'Failed to fetch D2L iCal feed. Please check the feed URL.' }, { status: 500 });
+    return NextResponse.json({ error: `Failed to fetch D2L iCal feed: ${error?.message || 'Unknown error'}` }, { status: 500 });
   }
 }
