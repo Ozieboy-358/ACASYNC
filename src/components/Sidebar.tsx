@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useAcademic } from "@/lib/context";
 import Modal from "./Modal";
 import styles from "./Sidebar.module.css";
 import { syncToGoogle, initGoogleApi } from "@/lib/googleApi";
-import { Class } from "@/lib/types";
+import { Class, NotebookSource } from "@/lib/types";
+import { formatUrl, getDomainFromUrl, renderTextWithLinks } from "@/lib/utils";
 import axios from "axios";
 
 export default function Sidebar() {
@@ -16,20 +17,23 @@ export default function Sidebar() {
     deleteClass, 
     events, 
     addEvent, 
-    objectives,
+    objectives, 
     toggleObjectiveStep,
-    addObjective,
+    addObjective, 
     deleteObjective,
-    icalFeeds,
-    addICalFeed,
+    icalFeeds, 
+    addICalFeed, 
     deleteICalFeed,
     syncAllICalFeeds,
     syncSingleICalFeed,
     isAutoSyncing,
     lastGlobalSync,
+    sources,
+    addSource,
+    deleteSource,
     currentView, 
     setCurrentView,
-    theme,
+    theme, 
     setTheme,
     geminiKey
   } = useAcademic();
@@ -44,6 +48,18 @@ export default function Sidebar() {
   const [activeTab, setActiveTab] = useState<'materials' | 'objectives' | 'grades' | 'notebook'>('objectives');
   const [syllabusText, setSyllabusText] = useState("");
   const [isParsingSyllabus, setIsParsingSyllabus] = useState(false);
+
+  // Materials & Document Viewer states
+  const [isAddMaterialOpen, setIsAddMaterialOpen] = useState(false);
+  const [newMaterialTitle, setNewMaterialTitle] = useState("");
+  const [newMaterialType, setNewMaterialType] = useState<"pdf" | "note" | "syllabus" | "link">("pdf");
+  const [newMaterialUrl, setNewMaterialUrl] = useState("");
+  const [newMaterialContent, setNewMaterialContent] = useState("");
+  const [materialFilter, setMaterialFilter] = useState<"all" | "pdf" | "note" | "syllabus" | "link">("all");
+  const [activeReaderSource, setActiveReaderSource] = useState<NotebookSource | null>(null);
+  const [isReaderModalOpen, setIsReaderModalOpen] = useState(false);
+  const [readerSearchQuery, setReaderSearchQuery] = useState("");
+  const [copySuccess, setCopySuccess] = useState(false);
   
   // Class add form state
   const [newClassName, setNewClassName] = useState("");
@@ -327,7 +343,72 @@ ${syllabusText}`;
     }
   };
 
-  const classMaterials = events.filter(e => e.classId === selectedClass?.id && e.type === 'material');
+  const handleMaterialFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!newMaterialTitle) {
+      setNewMaterialTitle(file.name.replace(/\.[^/.]+$/, ""));
+    }
+
+    const isPdf = file.name.toLowerCase().endsWith('.pdf');
+    if (isPdf) {
+      setNewMaterialType('pdf');
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      if (text) {
+        setNewMaterialContent(text);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleCreateMaterial = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedClass || !newMaterialTitle.trim()) return;
+
+    const content = newMaterialContent.trim() || `${newMaterialTitle}\n${newMaterialUrl ? `Link: ${newMaterialUrl}` : ''}`;
+    const wordCount = content.split(/\s+/).filter(Boolean).length;
+
+    addSource({
+      classId: selectedClass.id,
+      title: newMaterialTitle.trim(),
+      type: newMaterialType,
+      content,
+      url: newMaterialUrl.trim() || undefined,
+      wordCount
+    });
+
+    setNewMaterialTitle("");
+    setNewMaterialType("pdf");
+    setNewMaterialUrl("");
+    setNewMaterialContent("");
+    setIsAddMaterialOpen(false);
+  };
+
+  // Class materials and sources
+  const classSources = useMemo(() => {
+    if (!selectedClass) return [];
+    return sources.filter(s => s.classId === selectedClass.id);
+  }, [sources, selectedClass]);
+
+  const allMaterialsCount = classSources.length;
+  const pdfCount = classSources.filter(s => s.type === 'pdf').length;
+  const noteCount = classSources.filter(s => s.type === 'note').length;
+  const syllabusCount = classSources.filter(s => s.type === 'syllabus').length;
+  const linkCount = classSources.filter(s => s.type === 'link' || s.type === 'd2l_material').length;
+
+  const filteredMaterials = useMemo(() => {
+    return classSources.filter(s => {
+      if (materialFilter === 'all') return true;
+      if (materialFilter === 'link') return s.type === 'link' || s.type === 'd2l_material';
+      return s.type === materialFilter;
+    });
+  }, [classSources, materialFilter]);
+
   const classAssignments = events.filter(e => e.classId === selectedClass?.id && e.score !== undefined);
   const classObjectives = objectives.filter(o => o.classId === selectedClass?.id);
 
@@ -508,18 +589,157 @@ ${syllabusText}`;
             )}
 
             {activeTab === 'materials' && (
-              <div className={styles.materialsList}>
-                {classMaterials.map(m => (
-                  <div key={m.id} className={`${styles.materialCard} glass`}>
-                    <span className={styles.materialName}>{m.title}</span>
-                    {m.materialUrl && (
-                      <a href={m.materialUrl} target="_blank" className={styles.materialLink} rel="noreferrer">
-                        Open Link
-                      </a>
-                    )}
-                  </div>
-                ))}
-                {classMaterials.length === 0 && <p className={styles.emptyMsg}>No materials yet.</p>}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div className={styles.materialsHeaderRow}>
+                  <span className={styles.materialsTitle}>Course Materials & Files</span>
+                  <button 
+                    onClick={() => setIsAddMaterialOpen(true)}
+                    className={styles.addMaterialBtn}
+                  >
+                    + Add Material
+                  </button>
+                </div>
+
+                {/* Filter pills */}
+                <div className={styles.materialFilterRow}>
+                  <button 
+                    className={`${styles.materialFilterPill} ${materialFilter === 'all' ? styles.materialFilterPillActive : ''}`}
+                    onClick={() => setMaterialFilter('all')}
+                  >
+                    All ({allMaterialsCount})
+                  </button>
+                  <button 
+                    className={`${styles.materialFilterPill} ${materialFilter === 'pdf' ? styles.materialFilterPillActive : ''}`}
+                    onClick={() => setMaterialFilter('pdf')}
+                  >
+                    📄 PDFs ({pdfCount})
+                  </button>
+                  <button 
+                    className={`${styles.materialFilterPill} ${materialFilter === 'note' ? styles.materialFilterPillActive : ''}`}
+                    onClick={() => setMaterialFilter('note')}
+                  >
+                    📝 Notes ({noteCount})
+                  </button>
+                  <button 
+                    className={`${styles.materialFilterPill} ${materialFilter === 'syllabus' ? styles.materialFilterPillActive : ''}`}
+                    onClick={() => setMaterialFilter('syllabus')}
+                  >
+                    📜 Syllabus ({syllabusCount})
+                  </button>
+                  <button 
+                    className={`${styles.materialFilterPill} ${materialFilter === 'link' ? styles.materialFilterPillActive : ''}`}
+                    onClick={() => setMaterialFilter('link')}
+                  >
+                    🌐 Links ({linkCount})
+                  </button>
+                </div>
+
+                {/* Material Cards */}
+                <div className={styles.materialsList}>
+                  {filteredMaterials.map(m => {
+                    const isPdf = m.type === 'pdf';
+                    const isSyllabus = m.type === 'syllabus';
+                    const isLink = m.type === 'link' || m.type === 'd2l_material';
+                    const isNote = m.type === 'note';
+
+                    const iconClass = isPdf ? styles.iconPdf : isNote ? styles.iconNote : isSyllabus ? styles.iconSyllabus : styles.iconLink;
+                    const iconEmoji = isPdf ? '📄' : isNote ? '📝' : isSyllabus ? '📜' : '🌐';
+                    const badgeLabel = isPdf ? 'PDF DOC' : isNote ? 'LECTURE NOTE' : isSyllabus ? 'SYLLABUS' : 'WEB LINK';
+
+                    return (
+                      <div key={m.id} className={`${styles.materialCard} glass`}>
+                        <div className={styles.materialHeader}>
+                          <div className={`${styles.materialIconBox} ${iconClass}`}>
+                            {iconEmoji}
+                          </div>
+                          <div className={styles.materialInfo}>
+                            <div className={styles.materialTitleRow}>
+                              <h4 className={styles.materialName}>{m.title}</h4>
+                              <span className={`${styles.materialBadge} ${iconClass}`}>
+                                {badgeLabel}
+                              </span>
+                            </div>
+                            <div className={styles.materialMeta}>
+                              <span>{m.wordCount} words</span>
+                              <span>•</span>
+                              <span>~{Math.max(1, Math.ceil(m.wordCount / 280))} pg(s)</span>
+                              {m.url && (
+                                <>
+                                  <span>•</span>
+                                  <span title={m.url}>🔗 {getDomainFromUrl(m.url)}</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {m.content && (
+                          <p className={styles.materialSnippet}>
+                            {m.content.slice(0, 140)}...
+                          </p>
+                        )}
+
+                        <div className={styles.materialActions}>
+                          <button 
+                            onClick={() => {
+                              setActiveReaderSource(m);
+                              setReaderSearchQuery("");
+                              setIsReaderModalOpen(true);
+                            }}
+                            className={`${styles.actionBtnSmall} ${styles.btnReadDoc}`}
+                            title="Read full document text"
+                          >
+                            👁️ View Doc
+                          </button>
+
+                          {m.url && (
+                            <a 
+                              href={formatUrl(m.url)} 
+                              target="_blank" 
+                              rel="noopener noreferrer" 
+                              className={`${styles.actionBtnSmall} ${styles.btnOpenUrl}`}
+                              title="Open URL or external PDF in new tab"
+                            >
+                              {isPdf ? '📄 Open PDF ↗' : '🔗 Open Link ↗'}
+                            </a>
+                          )}
+
+                          <button 
+                            onClick={() => {
+                              localStorage.setItem('aca_notebook_class_id', selectedClass.id);
+                              setCurrentView('notebook');
+                            }}
+                            className={`${styles.actionBtnSmall} ${styles.btnAskAi}`}
+                            title="Ask AI questions on this document"
+                          >
+                            ✨ Ask AI
+                          </button>
+
+                          <button 
+                            onClick={() => deleteSource(m.id)}
+                            className={styles.btnDeleteMaterial}
+                            title="Delete Material"
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {filteredMaterials.length === 0 && (
+                    <div style={{ textAlign: 'center', padding: '24px 12px', color: 'var(--text-secondary)' }}>
+                      <p style={{ fontSize: '13px', marginBottom: '8px' }}>No materials matching "{materialFilter}" filter.</p>
+                      <button 
+                        onClick={() => setIsAddMaterialOpen(true)}
+                        className="btn-primary"
+                        style={{ fontSize: '12px', padding: '6px 14px' }}
+                      >
+                        + Upload or Add File
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -534,13 +754,27 @@ ${syllabusText}`;
                 </div>
                 <div className={styles.eventList} style={{ marginTop: '20px' }}>
                   {classAssignments.map(a => (
-                    <div key={a.id} className={styles.eventItem} style={{ opacity: a.completed ? 0.6 : 1 }}>
-                      <span className={styles.eventDate}>
-                        {a.score}/{a.totalScore} {a.completed && "✓"}
-                      </span>
-                      <p className={styles.eventTitle} style={{ textDecoration: a.completed ? 'line-through' : 'none' }}>
-                        {a.title} ({a.weight}%)
-                      </p>
+                    <div key={a.id} className={styles.eventItem} style={{ opacity: a.completed ? 0.6 : 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                      <div>
+                        <span className={styles.eventDate}>
+                          {a.score}/{a.totalScore} {a.completed && "✓"}
+                        </span>
+                        <p className={styles.eventTitle} style={{ textDecoration: a.completed ? 'line-through' : 'none' }}>
+                          {a.title} ({a.weight}%)
+                        </p>
+                      </div>
+                      {a.materialUrl && (
+                        <a 
+                          href={formatUrl(a.materialUrl)} 
+                          target="_blank" 
+                          rel="noopener noreferrer" 
+                          className={styles.materialLink}
+                          style={{ fontSize: '11px', whiteSpace: 'nowrap' }}
+                          title="Open homework page"
+                        >
+                          🔗 Link ↗
+                        </a>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1045,6 +1279,197 @@ ${syllabusText}`;
           </div>
           <button type="submit" className="btn-primary">Save Changes</button>
         </form>
+      </Modal>
+
+      {/* Add Material Modal */}
+      <Modal
+        isOpen={isAddMaterialOpen}
+        onClose={() => setIsAddMaterialOpen(false)}
+        title={`Add Material to ${selectedClass?.name || 'Class'}`}
+      >
+        <form onSubmit={handleCreateMaterial} className={styles.form}>
+          {/* Dropzone for local file upload */}
+          <label className={styles.fileDropzone}>
+            <input 
+              type="file" 
+              accept=".pdf,.txt,.md,.doc,.docx,.json,.csv"
+              onChange={handleMaterialFileUpload}
+              style={{ display: 'none' }}
+            />
+            <span className={styles.dropzoneIcon}>📁</span>
+            <span className={styles.dropzoneText}>Click to upload file (.pdf, .txt, .md, .docx)</span>
+            <span className={styles.dropzoneSubtext}>Auto-populates title and extracts document text</span>
+          </label>
+
+          <div className={styles.formGroup}>
+            <label>Document Title</label>
+            <input 
+              type="text" 
+              value={newMaterialTitle}
+              onChange={(e) => setNewMaterialTitle(e.target.value)}
+              placeholder="e.g. Physics Lab Manual 2.pdf, Lecture 1 Notes"
+              className={styles.input}
+              required
+            />
+          </div>
+
+          <div className={styles.row}>
+            <div className={styles.formGroup}>
+              <label>Material Type</label>
+              <select 
+                value={newMaterialType}
+                onChange={(e: any) => setNewMaterialType(e.target.value)}
+                className={styles.input}
+              >
+                <option value="pdf">📄 PDF Document</option>
+                <option value="note">📝 Lecture Note / Doc</option>
+                <option value="syllabus">📜 Course Syllabus</option>
+                <option value="link">🌐 Web / D2L Link</option>
+              </select>
+            </div>
+            <div className={styles.formGroup} style={{ flex: 2 }}>
+              <label>File / Web Link URL (Optional)</label>
+              <input 
+                type="url" 
+                value={newMaterialUrl}
+                onChange={(e) => setNewMaterialUrl(e.target.value)}
+                placeholder="https://... D2L PDF link or web URL"
+                className={styles.input}
+              />
+            </div>
+          </div>
+
+          <div className={styles.formGroup}>
+            <label>Document Content / Notes (for AI query & search)</label>
+            <textarea 
+              value={newMaterialContent}
+              onChange={(e) => setNewMaterialContent(e.target.value)}
+              placeholder="Paste or write the text contents of the document here. NotebookLM will index and query this text."
+              className={styles.input}
+              style={{ minHeight: '90px', resize: 'vertical' }}
+            />
+          </div>
+
+          <button type="submit" className="btn-primary">Save Material</button>
+        </form>
+      </Modal>
+
+      {/* Document Viewer Modal */}
+      <Modal
+        isOpen={isReaderModalOpen}
+        onClose={() => {
+          setIsReaderModalOpen(false);
+          setActiveReaderSource(null);
+        }}
+        title={activeReaderSource ? `${activeReaderSource.title}` : "Document Viewer"}
+      >
+        {activeReaderSource && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {/* Header info */}
+            <div className="glass" style={{ padding: '12px 16px', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '18px' }}>
+                  {activeReaderSource.type === 'pdf' ? '📄' : activeReaderSource.type === 'note' ? '📝' : activeReaderSource.type === 'syllabus' ? '📜' : '🌐'}
+                </span>
+                <div>
+                  <span style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--accent)' }}>
+                    {activeReaderSource.type.toUpperCase()}
+                  </span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)', marginLeft: '8px' }}>
+                    {activeReaderSource.wordCount} words • ~{Math.max(1, Math.ceil(activeReaderSource.wordCount / 280))} page(s)
+                  </span>
+                </div>
+              </div>
+              {activeReaderSource.url && (
+                <a 
+                  href={formatUrl(activeReaderSource.url)} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  style={{ fontSize: '12px', color: '#38bdf8', textDecoration: 'underline' }}
+                >
+                  Open External Link ↗
+                </a>
+              )}
+            </div>
+
+            {/* In-doc search */}
+            <input 
+              type="text"
+              value={readerSearchQuery}
+              onChange={(e) => setReaderSearchQuery(e.target.value)}
+              placeholder="🔍 Search inside document..."
+              className={styles.input}
+              style={{ padding: '8px 12px', fontSize: '13px' }}
+            />
+
+            {/* Content view */}
+            <div 
+              className="scroll-thin"
+              style={{
+                maxHeight: '360px',
+                overflowY: 'auto',
+                padding: '16px',
+                background: 'rgba(255,255,255,0.03)',
+                borderRadius: '10px',
+                border: '1px solid var(--card-border)',
+                lineHeight: 1.6,
+                fontSize: '13px',
+                whiteSpace: 'pre-wrap',
+                fontFamily: 'inherit'
+              }}
+            >
+              {activeReaderSource.content ? (
+                readerSearchQuery.trim() ? (
+                  activeReaderSource.content.split(new RegExp(`(${readerSearchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi')).map((chunk, idx) => {
+                    const isMatch = chunk.toLowerCase() === readerSearchQuery.toLowerCase();
+                    return isMatch ? (
+                      <mark key={idx} style={{ background: '#f59e0b', color: '#000', borderRadius: '2px', padding: '1px 3px' }}>
+                        {chunk}
+                      </mark>
+                    ) : (
+                      <span key={idx}>{chunk}</span>
+                    );
+                  })
+                ) : (
+                  renderTextWithLinks(activeReaderSource.content)
+                )
+              ) : (
+                <p style={{ color: 'var(--text-secondary)', fontStyle: 'italic' }}>No preview text available for this document.</p>
+              )}
+            </div>
+
+            {/* Action Bar */}
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
+              <button 
+                type="button" 
+                onClick={() => {
+                  navigator.clipboard.writeText(activeReaderSource.content || '');
+                  setCopySuccess(true);
+                  setTimeout(() => setCopySuccess(false), 2000);
+                }}
+                className="glass-interactive"
+                style={{ padding: '8px 14px', borderRadius: '8px', fontSize: '12px', color: 'var(--text-primary)', border: '1px solid var(--card-border)' }}
+              >
+                {copySuccess ? '✓ Copied!' : '📋 Copy Text'}
+              </button>
+
+              <button 
+                type="button"
+                onClick={() => {
+                  if (selectedClass) {
+                    localStorage.setItem('aca_notebook_class_id', selectedClass.id);
+                  }
+                  setIsReaderModalOpen(false);
+                  setCurrentView('notebook');
+                }}
+                className="btn-primary"
+                style={{ fontSize: '12px', padding: '8px 16px' }}
+              >
+                ✨ Query in NotebookLM
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </>
   );

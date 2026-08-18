@@ -101,13 +101,14 @@ const generateDefaultObjectives = (classId: string, className: string): CoreObje
 const generateDefaultSources = (classId: string, className: string): NotebookSource[] => {
   const name = className.toLowerCase();
   
-  if (name.includes('phys')) {
+  if (name.includes('physic') || name.includes('phys')) {
     return [
       {
         id: `${classId}-syllabus`,
         classId,
-        title: 'Physics 101 Syllabus',
-        type: 'syllabus',
+        title: 'PHYS 101: Course Syllabus & Policies.pdf',
+        type: 'pdf',
+        url: 'https://d2l.university.edu/content/phys101/syllabus_2026.pdf',
         content: `Advanced Physics (PHYS 101) Course Syllabus
 
 Grading Weights & Breakdown:
@@ -128,9 +129,32 @@ Course Policies & Office Hours:
         addedAt: new Date().toISOString()
       },
       {
+        id: `${classId}-lab-manual`,
+        classId,
+        title: 'Physics Lab Manual: Projectile & Newton Mechanics.pdf',
+        type: 'pdf',
+        url: 'https://d2l.university.edu/content/phys101/lab_manual_projectile.pdf',
+        content: `PHYS 101 - Lab Manual Experiment 2: 2D Projectile Motion and Ballistic Trajectory
+
+Objective: Measure projectile range vs launch angle theta, calculate velocity using photogates, and verify theoretical range formula R = (v0^2 / g) * sin(2*theta).
+
+Equipment Required:
+- Spring-loaded ball launcher with protractor mount
+- Photogate timer accurate to 0.1 milliseconds
+- Carbon paper and meter scale for landing point measurement
+- Steel spheres (mass = 45g ± 0.5g)
+
+Procedure & Calculations:
+1. Fire 5 trials at angles 30°, 45°, and 60°.
+2. Tabulate mean landing distance and calculate percent error against theoretical predictions.
+3. Submit full lab report with error analysis on D2L by Friday midnight.`,
+        wordCount: 125,
+        addedAt: new Date().toISOString()
+      },
+      {
         id: `${classId}-lecture1`,
         classId,
-        title: 'Lecture 1: Kinematics & Forces',
+        title: 'Lecture 1: Kinematics & Forces Notes',
         type: 'note',
         content: `PHYS 101 - Lecture 1 Notes: Kinematics and Forces
 
@@ -153,9 +177,19 @@ Course Policies & Office Hours:
         addedAt: new Date().toISOString()
       },
       {
+        id: `${classId}-webassign-link`,
+        classId,
+        title: 'WebAssign Problem Sets Portal',
+        type: 'link',
+        url: 'https://webassign.net/wa-auth/login',
+        content: `WebAssign online portal for weekly Physics 101 problem sets and automatic grading. Submissions close every Sunday 11:59 PM.`,
+        wordCount: 19,
+        addedAt: new Date().toISOString()
+      },
+      {
         id: `${classId}-guide`,
         classId,
-        title: 'Physics Midterm Study Sheet',
+        title: 'Physics Midterm Formula & Study Sheet',
         type: 'note',
         content: `PHYS 101 Midterm Review Guide - Study Tips & Core Concepts
 
@@ -183,8 +217,9 @@ Work & Mechanical Energy:
       {
         id: `${classId}-syllabus`,
         classId,
-        title: 'CS 201: Data Structures Syllabus',
-        type: 'syllabus',
+        title: 'CS 201: Data Structures Syllabus.pdf',
+        type: 'pdf',
+        url: 'https://d2l.university.edu/content/cs201/syllabus.pdf',
         content: `CS 201 - Data Structures and Algorithms Course Syllabus
 
 Grading Policy:
@@ -205,6 +240,28 @@ Development Standards:
 - Programming language is Java 17. Use VS Code, IntelliJ, or Eclipse. Code must compile without errors.
 - Office hours: Mon/Wed 10:00 AM - 12:00 PM in Technology Hall, Room 402.`,
         wordCount: 168,
+        addedAt: new Date().toISOString()
+      },
+      {
+        id: `${classId}-cheatsheet`,
+        classId,
+        title: 'Big-O & Data Structures Reference Sheet.pdf',
+        type: 'pdf',
+        url: 'https://github.com/cs201/resources/blob/main/big_o_cheatsheet.pdf',
+        content: `CS 201 - Big-O Complexity & Data Structures Cheat Sheet
+
+Operation Complexities Summary:
+- Array: Access O(1), Search O(n), Insertion O(n), Deletion O(n)
+- Singly Linked List: Access O(n), Search O(n), Insert Head O(1), Delete Head O(1)
+- Binary Search Tree (Balanced): Search O(log n), Insert O(log n), Delete O(log n)
+- Hash Map: Search O(1) avg, Insert O(1) avg, Delete O(1) avg. Worst case O(n) on heavy hash collisions.
+- Heap / Priority Queue: Find Min O(1), Insert O(log n), Extract Min O(log n)
+
+Graph Algorithms:
+- Breadth-First Search (BFS): O(V + E) using Queue. Finds shortest unweighted path.
+- Depth-First Search (DFS): O(V + E) using Stack/Recursion. Cycle detection and topological sort.
+- Dijkstra's Algorithm: O((V + E) log V) with Min-Heap for single-source shortest path with positive weights.`,
+        wordCount: 135,
         addedAt: new Date().toISOString()
       },
       {
@@ -231,6 +288,16 @@ Development Standards:
 - Array: Contiguous memory. Fast random access O(1). Slow insertion/deletion O(n) because values must shift.
 - Linked List: Nodes connected by pointers. Slow random access O(n) since we must traverse. Fast insertion/deletion O(1) once node is located.`,
         wordCount: 182,
+        addedAt: new Date().toISOString()
+      },
+      {
+        id: `${classId}-gradescope-link`,
+        classId,
+        title: 'Gradescope Autograder & Starter Code',
+        type: 'link',
+        url: 'https://gradescope.com/courses/cs201',
+        content: `Gradescope autograder platform for unit testing and test coverage evaluations for all 4 semester programming projects.`,
+        wordCount: 18,
         addedAt: new Date().toISOString()
       },
       {
@@ -263,8 +330,9 @@ Sorting Comparison:
       {
         id: `${classId}-syllabus`,
         classId,
-        title: `${className} Course Syllabus`,
-        type: 'syllabus',
+        title: `${className} Course Syllabus.pdf`,
+        type: 'pdf',
+        url: 'https://d2l.university.edu/content/syllabus.pdf',
         content: `Syllabus Overview for ${className}
 
 Grading Policy:
@@ -286,7 +354,7 @@ Additional Details:
       {
         id: `${classId}-lecture1`,
         classId,
-        title: 'Lecture 1: Introductory Outline',
+        title: 'Lecture 1: Introductory Outline & Reading List',
         type: 'note',
         content: `Lecture Notes - Introduction to ${className}
 
@@ -437,8 +505,84 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
     const savedTheme = localStorage.getItem('aca_theme') || 'midnight';
     const savedKey = localStorage.getItem('aca_gemini_key') || '';
     
-    if (savedClasses) setClasses(JSON.parse(savedClasses));
-    if (savedEvents) setEvents(JSON.parse(savedEvents));
+    if (savedClasses) {
+      setClasses(JSON.parse(savedClasses));
+    } else {
+      const defaultClasses: Class[] = [
+        { id: "phys-101", name: "Physics 101: Mechanics", color: "#38bdf8", credits: 4, code: "PHYS 101", instructor: "Dr. Henderson" },
+        { id: "cs-201", name: "CS 201: Data Structures", color: "#8b5cf6", credits: 4, code: "CS 201", instructor: "Prof. Alan Turing" }
+      ];
+      setClasses(defaultClasses);
+    }
+
+    if (savedEvents) {
+      setEvents(JSON.parse(savedEvents));
+    } else {
+      const today = new Date();
+      const formatDay = (offset: number) => {
+        const d = new Date(today);
+        d.setDate(today.getDate() + offset);
+        return d.toISOString().split('T')[0];
+      };
+
+      const defaultEvents: AcademicEvent[] = [
+        {
+          id: "ev-1",
+          classId: "phys-101",
+          title: "Homework 1: Kinematics & Vector Math",
+          date: formatDay(2),
+          type: "assignment",
+          weight: 5,
+          totalScore: 100,
+          startTime: "17:00",
+          endTime: "18:00",
+          materialUrl: "https://d2l.university.edu/d2l/lms/dropbox/user/folder_submit.d2l?db=84920",
+          description: "Complete all 6 problems from Chapter 2 in the Physics Workbook. Submit your PDF work on the D2L portal before 11:59 PM.",
+          completed: false
+        },
+        {
+          id: "ev-2",
+          classId: "cs-201",
+          title: "Project 1: Linked Lists & Node Pointers",
+          date: formatDay(5),
+          type: "assignment",
+          weight: 10,
+          totalScore: 100,
+          startTime: "23:59",
+          materialUrl: "https://github.com/classroom/assignment-linked-lists",
+          description: "Implement doubly-linked list with add, remove, and reverse operations in Java. Run test suite with JUnit.",
+          completed: false
+        },
+        {
+          id: "ev-3",
+          classId: "phys-101",
+          title: "Lab 2: Newton's Second Law & Incline Friction",
+          date: formatDay(8),
+          type: "assignment",
+          weight: 5,
+          totalScore: 50,
+          materialUrl: "https://webassign.net/physics/newtons-laws-lab",
+          description: "Perform sensor calibration and calculate acceleration on varying incline angles.",
+          completed: false
+        },
+        {
+          id: "ev-4",
+          classId: "cs-201",
+          title: "Quiz 1: Big-O & Complexity Analysis",
+          date: formatDay(11),
+          type: "quiz",
+          weight: 5,
+          totalScore: 25,
+          startTime: "10:00",
+          endTime: "10:50",
+          materialUrl: "https://gradescope.com/courses/cs201/quizzes/quiz1",
+          description: "Timed 50-minute quiz covering constant vs logarithmic vs linear time complexities.",
+          completed: false
+        }
+      ];
+      setEvents(defaultEvents);
+    }
+
     if (savedSources) setSources(JSON.parse(savedSources));
     if (savedFlashcards) setFlashcards(JSON.parse(savedFlashcards));
     if (savedObjectives) setObjectives(JSON.parse(savedObjectives));
@@ -584,11 +728,6 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
 
     // Auto-sync D2L / assignment materials into NotebookLM
     syncEventToNotebookSource(newEvent);
-
-    // Auto generate completion guide if none attached
-    if (!newEvent.completionSteps || newEvent.completionSteps.length === 0) {
-      generateObjectiveForAssignment(newEvent);
-    }
 
     return eventId;
   };

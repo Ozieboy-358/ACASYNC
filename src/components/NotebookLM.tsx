@@ -230,17 +230,42 @@ export default function NotebookLM() {
     }, 100);
   };
 
+  // Handle File / PDF upload
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!newSourceTitle) {
+      setNewSourceTitle(file.name.replace(/\.[^/.]+$/, ""));
+    }
+
+    const isPdf = file.name.toLowerCase().endsWith('.pdf');
+    if (isPdf) {
+      setNewSourceType('pdf');
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      if (text) {
+        setNewSourceContent(text);
+      }
+    };
+    reader.readAsText(file);
+  };
+
   // Add Custom Source
   const handleAddSource = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newSourceTitle.trim() || !newSourceContent.trim()) return;
+    if (!newSourceTitle.trim()) return;
 
-    const words = newSourceContent.trim().split(/\s+/).length;
+    const content = newSourceContent.trim() || `${newSourceTitle}\n${newSourceUrl ? `URL: ${newSourceUrl}` : ''}`;
+    const words = content.split(/\s+/).filter(Boolean).length;
     addSource({
       classId: selectedClassId === "all" ? "global" : selectedClassId,
       title: newSourceTitle,
       type: newSourceType === "link" ? "link" : newSourceType === "pdf" ? "pdf" : "note",
-      content: newSourceContent,
+      content,
       url: newSourceUrl || undefined,
       wordCount: words
     });
@@ -2066,13 +2091,26 @@ No markdown formatting or extra text outside the JSON array.`;
         title="Add Material Source"
       >
         <form onSubmit={handleAddSource} className={styles.form}>
+          {/* Dropzone for local file upload */}
+          <label className={styles.fileDropzone} style={{ marginBottom: "14px", cursor: "pointer", border: "2px dashed var(--card-border)", borderRadius: "10px", padding: "16px", display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", background: "rgba(255, 255, 255, 0.02)" }}>
+            <input 
+              type="file" 
+              accept=".pdf,.txt,.md,.doc,.docx,.json,.csv"
+              onChange={handleFileUpload}
+              style={{ display: "none" }}
+            />
+            <span style={{ fontSize: "24px" }}>📁</span>
+            <span style={{ fontSize: "13px", fontWeight: 500 }}>Click to upload local file (.pdf, .txt, .md)</span>
+            <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>Auto-populates title and extracts document content</span>
+          </label>
+
           <div className={styles.formGroup}>
             <label>Title</label>
             <input 
               type="text" 
               value={newSourceTitle} 
               onChange={(e) => setNewSourceTitle(e.target.value)}
-              placeholder="e.g. Lecture 2 Notes: Circular Motion"
+              placeholder="e.g. Lecture 2 Notes: Circular Motion or Syllabus.pdf"
               className={styles.input}
               required
               autoFocus
@@ -2088,24 +2126,22 @@ No markdown formatting or extra text outside the JSON array.`;
                 className={styles.input}
                 style={{ width: "100%" }}
               >
-                <option value="note">My Study Notes</option>
-                <option value="pdf">Syllabus PDF / Doc</option>
-                <option value="link">Web link / URL</option>
+                <option value="pdf">📄 PDF Document</option>
+                <option value="note">📝 My Study Notes</option>
+                <option value="link">🌐 Web link / URL</option>
               </select>
             </div>
             
-            {newSourceType === "link" && (
-              <div className={styles.formGroup} style={{ flex: 2 }}>
-                <label>URL Link</label>
-                <input 
-                  type="url" 
-                  value={newSourceUrl} 
-                  onChange={(e) => setNewSourceUrl(e.target.value)}
-                  placeholder="https://example.com/slide.pdf"
-                  className={styles.input}
-                />
-              </div>
-            )}
+            <div className={styles.formGroup} style={{ flex: 2 }}>
+              <label>URL Link (Optional)</label>
+              <input 
+                type="url" 
+                value={newSourceUrl} 
+                onChange={(e) => setNewSourceUrl(e.target.value)}
+                placeholder="https://example.com/slide.pdf"
+                className={styles.input}
+              />
+            </div>
           </div>
 
           <div className={styles.formGroup}>
@@ -2115,7 +2151,6 @@ No markdown formatting or extra text outside the JSON array.`;
               onChange={(e) => setNewSourceContent(e.target.value)}
               placeholder="Paste or write the text contents of the lecture, syllabus, or note here. The indexer will search this text when you enter queries."
               className={`${styles.input} ${styles.textarea}`}
-              required
             />
           </div>
 

@@ -3,11 +3,12 @@
 import { useState } from "react";
 import { useAcademic } from "@/lib/context";
 import { AcademicEvent } from "@/lib/types";
+import { formatUrl, getDomainFromUrl, renderTextWithLinks } from "@/lib/utils";
 import Modal from "./Modal";
 import styles from "./Calendar.module.css";
 
 export default function Calendar() {
-  const { events, addEvent, updateEvent, deleteEvent, classes, objectives, toggleObjectiveStep } = useAcademic();
+  const { events, addEvent, updateEvent, deleteEvent, classes } = useAcademic();
   const [viewMode, setViewMode] = useState<'month' | 'week' | 'agenda'>('month');
   
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>("all");
@@ -138,16 +139,16 @@ export default function Calendar() {
     e.preventDefault();
     if (eventTitle.trim() && eventClassId) {
       const baseEvent = {
-        title: eventTitle,
+        title: eventTitle.trim(),
         classId: eventClassId,
         type: eventType,
-        materialUrl: eventType === 'material' ? materialUrl : undefined,
+        materialUrl: materialUrl.trim() ? materialUrl.trim() : undefined,
         score: score ? parseFloat(score) : undefined,
         totalScore: totalScore ? parseFloat(totalScore) : undefined,
         weight: weight ? parseFloat(weight) : undefined,
         startTime: startTime || undefined,
         endTime: endTime || undefined,
-        description: eventDescription || undefined,
+        description: eventDescription.trim() || undefined,
         completed: false
       };
 
@@ -199,16 +200,16 @@ export default function Calendar() {
       updateEvent({
         id: selectedEvent.id,
         date: selectedEvent.date,
-        title: editTitle,
+        title: editTitle.trim(),
         classId: editClassId,
         type: editType,
-        materialUrl: editType === 'material' ? editMaterialUrl : undefined,
+        materialUrl: editMaterialUrl.trim() ? editMaterialUrl.trim() : undefined,
         score: editScore ? parseFloat(editScore) : undefined,
         totalScore: editTotalScore ? parseFloat(editTotalScore) : undefined,
         weight: editWeight ? parseFloat(editWeight) : undefined,
         startTime: editStartTime || undefined,
         endTime: editEndTime || undefined,
-        description: editDescription || undefined,
+        description: editDescription.trim() || undefined,
         completed: editCompleted
       });
       setIsEditModalOpen(false);
@@ -268,12 +269,6 @@ export default function Calendar() {
       });
     }
   };
-
-  // Objective matching selected event
-  const currentEventObjective = selectedEvent 
-    ? objectives.find(o => o.classId === selectedEvent.classId && o.title.toLowerCase().includes(selectedEvent.title.toLowerCase())) ||
-      objectives.find(o => o.classId === selectedEvent.classId)
-    : null;
 
   return (
     <>
@@ -382,10 +377,11 @@ export default function Calendar() {
                           onClick={(e) => handleEventClick(e, event)}
                           className={`${styles.eventPill} ${event.completed ? styles.eventPillCompleted : ""}`} 
                           style={{ backgroundColor: event.completed ? undefined : (cls?.color || "#8b5cf6") }}
-                          title={`${event.type.toUpperCase()}: ${event.title}`}
+                          title={`${event.type.toUpperCase()}: ${event.title}${event.materialUrl ? ` (Homework link attached)` : ''}`}
                         >
                           {event.startTime && <span style={{ fontSize: '9px', opacity: 0.8, marginRight: '3px' }}>{event.startTime}</span>}
                           {event.title}
+                          {event.materialUrl && <span className={styles.pillLinkIcon} title="Homework Link Attached">🔗</span>}
                         </div>
                       );
                     })}
@@ -436,9 +432,11 @@ export default function Calendar() {
                             whiteSpace: 'normal',
                             padding: '8px'
                           }}
+                          title={`${event.type.toUpperCase()}: ${event.title}${event.materialUrl ? ` (Homework link attached)` : ''}`}
                         >
-                          <div style={{ fontSize: '9px', textTransform: 'uppercase', opacity: 0.8, fontWeight: 700, marginBottom: '2px' }}>
-                            {event.startTime ? `${event.startTime} ${event.endTime ? ` - ${event.endTime}` : ''}` : 'All Day'}
+                          <div style={{ fontSize: '9px', textTransform: 'uppercase', opacity: 0.8, fontWeight: 700, marginBottom: '2px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span>{event.startTime ? `${event.startTime} ${event.endTime ? ` - ${event.endTime}` : ''}` : 'All Day'}</span>
+                            {event.materialUrl && <span title="Homework link attached">🔗</span>}
                           </div>
                           <div style={{ fontSize: '12px', fontWeight: 600 }}>{event.title}</div>
                         </div>
@@ -501,11 +499,33 @@ export default function Calendar() {
                                   {event.startTime} {event.endTime ? `- ${event.endTime}` : ""}
                                 </span>
                               )}
+                              {event.weight !== undefined && (
+                                <span className={styles.agendaTime} style={{ fontWeight: 600 }}>
+                                  {event.weight}% weight
+                                </span>
+                              )}
                             </div>
                             <h4 className={styles.agendaTitle} style={{ textDecoration: event.completed ? 'line-through' : 'none' }}>
                               {event.title}
                             </h4>
-                            {event.description && <p className={styles.agendaDesc}>{event.description}</p>}
+                            {event.description && (
+                              <p className={styles.agendaDesc}>
+                                {renderTextWithLinks(event.description)}
+                              </p>
+                            )}
+                            {event.materialUrl && (
+                              <div style={{ marginTop: '4px' }}>
+                                <a 
+                                  href={formatUrl(event.materialUrl)} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer" 
+                                  className={styles.agendaLinkBtn}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  🔗 Open Homework Page ↗
+                                </a>
+                              </div>
+                            )}
                           </div>
                         </div>
                       );
@@ -591,18 +611,7 @@ export default function Calendar() {
             </div>
           </div>
 
-          {eventType === 'material' ? (
-            <div className={styles.formGroup}>
-              <label>Material / Document Link</label>
-              <input 
-                type="url" 
-                value={materialUrl} 
-                onChange={(e) => setMaterialUrl(e.target.value)}
-                placeholder="https://... PDF or D2L link"
-                className={styles.input}
-              />
-            </div>
-          ) : (
+          {eventType !== 'material' && (
             <div className={styles.row}>
               <div className={styles.formGroup}>
                 <label>Weight (% of grade)</label>
@@ -636,6 +645,17 @@ export default function Calendar() {
               </div>
             </div>
           )}
+
+          <div className={styles.formGroup}>
+            <label>Homework / Resource Link (URL)</label>
+            <input 
+              type="url" 
+              value={materialUrl} 
+              onChange={(e) => setMaterialUrl(e.target.value)}
+              placeholder="https://... D2L drop box, Canvas, Gradescope, or homework link"
+              className={styles.input}
+            />
+          </div>
 
           <div className={styles.formGroup}>
             <label>Description / D2L Notes</label>
@@ -674,17 +694,44 @@ export default function Calendar() {
         </form>
       </Modal>
 
-      {/* Edit Event & Completion Guide Modal */}
+      {/* Edit Event & Assignment Details Modal */}
       <Modal 
         isOpen={isEditModalOpen} 
         onClose={() => {
           setIsEditModalOpen(false);
           setSelectedEvent(null);
         }} 
-        title="Assignment Details & Completion Guide"
+        title="Assignment Details"
       >
         {selectedEvent && (
           <form onSubmit={handleSaveEdit} className={styles.form}>
+            {/* Clickable Homework Link Card if URL is provided */}
+            {editMaterialUrl && editMaterialUrl.trim() && (
+              <div className={styles.homeworkLinkCard}>
+                <div className={styles.homeworkLinkHeader}>
+                  <span className={styles.homeworkLinkBadge}>🔗 Homework Page / Submission Link</span>
+                  <a 
+                    href={formatUrl(editMaterialUrl)} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className={styles.openHomeworkBtn}
+                  >
+                    Open Homework Page ↗
+                  </a>
+                </div>
+                <div className={styles.homeworkUrlDisplay}>
+                  <a 
+                    href={formatUrl(editMaterialUrl)} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className={styles.homeworkUrlLink}
+                  >
+                    {getDomainFromUrl(editMaterialUrl)} — {editMaterialUrl}
+                  </a>
+                </div>
+              </div>
+            )}
+
             <div className={styles.formGroup}>
               <label>Title</label>
               <input 
@@ -778,40 +825,38 @@ export default function Calendar() {
               </div>
             )}
 
-            {/* Core Objective & Guide Steps for this assignment */}
-            {currentEventObjective && (
-              <div className="glass" style={{ padding: '14px', borderRadius: '10px', marginTop: '10px', border: '1px solid var(--accent-glow)' }}>
-                <h4 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent)', marginBottom: '6px' }}>
-                  🎯 Core Objective Guide
-                </h4>
-                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                  {currentEventObjective.title}
-                </p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  {currentEventObjective.guides.map(g => (
-                    <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', cursor: 'pointer' }}>
-                      <input 
-                        type="checkbox"
-                        checked={g.completed}
-                        onChange={() => toggleObjectiveStep(currentEventObjective.id, g.id)}
-                        style={{ accentColor: 'var(--accent)' }}
-                      />
-                      <span style={{ textDecoration: g.completed ? 'line-through' : 'none', color: g.completed ? 'var(--text-secondary)' : 'var(--text-primary)' }}>
-                        {g.title}
-                      </span>
-                    </label>
-                  ))}
-                </div>
+            {/* Homework / Resource Link input */}
+            <div className={styles.formGroup}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label>Homework / Resource Link (URL)</label>
+                {editMaterialUrl && editMaterialUrl.trim() && (
+                  <a 
+                    href={formatUrl(editMaterialUrl)} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    style={{ fontSize: '12px', color: 'var(--accent, #38bdf8)', textDecoration: 'underline' }}
+                  >
+                    Open Link ↗
+                  </a>
+                )}
               </div>
-            )}
+              <input 
+                type="url" 
+                value={editMaterialUrl} 
+                onChange={(e) => setEditMaterialUrl(e.target.value)}
+                placeholder="https://... D2L drop box, Canvas, Gradescope, or homework link"
+                className={styles.input}
+              />
+            </div>
 
-            <div className={styles.formGroup} style={{ marginTop: '10px' }}>
+            <div className={styles.formGroup}>
               <label>Description / D2L Notes</label>
               <textarea 
                 value={editDescription} 
                 onChange={(e) => setEditDescription(e.target.value)}
                 className={styles.input}
                 style={{ minHeight: '70px', resize: 'vertical' }}
+                placeholder="Add details, instructions, or assignment guidelines..."
               />
             </div>
 
@@ -842,3 +887,4 @@ export default function Calendar() {
     </>
   );
 }
+

@@ -75,7 +75,7 @@
   gap: 28px;
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 1180px), (orientation: portrait) {
   .mainGrid {
     grid-template-columns: 1fr;
   }
@@ -461,5 +461,29 @@
   color: var(--accent);
   margin-bottom: 6px;
 }
+
+.deliverableLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(56, 189, 248, 0.15);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: #38bdf8;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+  text-decoration: none;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.deliverableLink:hover {
+  background: rgba(56, 189, 248, 0.25);
+  border-color: #38bdf8;
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
 
 

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAcademic } from "@/lib/context";
 import { Class, AcademicEvent } from "@/lib/types";
+import { formatUrl } from "@/lib/utils";
 import styles from "./Dashboard.module.css";
 
 export default function Dashboard() {
@@ -291,7 +292,20 @@ export default function Dashboard() {
                       <span className={styles.upcomingTitle}>Upcoming Tasks</span>
                       {upcomingForClass.map(event => (
                         <div key={event.id} className={styles.upcomingItem}>
-                          <span className={styles.upcomingName}>{event.title}</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', maxWidth: '170px' }}>
+                            <span className={styles.upcomingName}>{event.title}</span>
+                            {event.materialUrl && (
+                              <a 
+                                href={formatUrl(event.materialUrl)} 
+                                target="_blank" 
+                                rel="noopener noreferrer" 
+                                style={{ color: 'var(--accent, #38bdf8)', fontSize: '11px', textDecoration: 'none' }}
+                                title="Open homework page"
+                              >
+                                🔗
+                              </a>
+                            )}
+                          </div>
                           <span className={styles.upcomingDate}>
                             {new Date(event.date + "T12:00:00").toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                           </span>
@@ -335,8 +349,21 @@ export default function Dashboard() {
                         });
                       }}
                     />
-                    <div className={styles.checkTextContainer}>
-                      <span className={styles.checkTitle}>{event.title}</span>
+                    <div className={styles.checkTextContainer} style={{ width: '100%' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                        <span className={styles.checkTitle}>{event.title}</span>
+                        {event.materialUrl && (
+                          <a 
+                            href={formatUrl(event.materialUrl)} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className={styles.deliverableLink}
+                            title="Open homework page"
+                          >
+                            🔗 Homework ↗
+                          </a>
+                        )}
+                      </div>
                       <span className={styles.checkClass} style={{ color: cls?.color || "var(--accent)" }}>
                         {cls?.name || "D2L Sync"}
                       </span>
