@@ -395,11 +395,11 @@ interface AcademicContextType {
   generateObjectiveForAssignment: (event: AcademicEvent) => string;
 
   // Saved iCal Feeds & Auto Sync methods
-  addICalFeed: (feed: Omit<SavedICalFeed, 'id'>) => string;
+  addICalFeed: (feed: Omit<SavedICalFeed, 'id'>) => SavedICalFeed;
   updateICalFeed: (feed: SavedICalFeed) => void;
   deleteICalFeed: (id: string) => void;
   syncAllICalFeeds: () => Promise<{ success: boolean; syncedEvents: number; errors: string[] }>;
-  syncSingleICalFeed: (feedId: string) => Promise<{ success: boolean; eventCount: number }>;
+  syncSingleICalFeed: (feedOrId: string | SavedICalFeed) => Promise<{ success: boolean; eventCount: number }>;
 
   currentView: 'calendar' | 'dashboard' | 'notebook';
   setCurrentView: (view: 'calendar' | 'dashboard' | 'notebook') => void;
@@ -702,11 +702,11 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
   };
 
   // iCal / D2L Saved Feeds methods
-  const addICalFeed = (feed: Omit<SavedICalFeed, 'id'>): string => {
+  const addICalFeed = (feed: Omit<SavedICalFeed, 'id'>): SavedICalFeed => {
     const feedId = Math.random().toString(36).substr(2, 9);
     const newFeed: SavedICalFeed = { ...feed, id: feedId };
     setIcalFeeds(prev => [...prev, newFeed]);
-    return feedId;
+    return newFeed;
   };
 
   const updateICalFeed = (updated: SavedICalFeed) => {
@@ -717,8 +717,8 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
     setIcalFeeds(prev => prev.filter(f => f.id !== id));
   };
 
-  const syncSingleICalFeed = async (feedId: string): Promise<{ success: boolean; eventCount: number }> => {
-    const feed = icalFeeds.find(f => f.id === feedId);
+  const syncSingleICalFeed = async (feedOrId: string | SavedICalFeed): Promise<{ success: boolean; eventCount: number }> => {
+    const feed = typeof feedOrId === 'string' ? icalFeeds.find(f => f.id === feedOrId) : feedOrId;
     if (!feed) return { success: false, eventCount: 0 };
 
     try {

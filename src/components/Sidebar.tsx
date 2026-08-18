@@ -86,7 +86,7 @@ export default function Sidebar() {
       const feedName = d2lFeedName.trim() || "D2L Course Feed";
       
       // Save iCal Feed so it automatically updates & saves import data
-      const feedId = addICalFeed({
+      const newFeed = addICalFeed({
         name: feedName,
         url: d2lUrl.trim(),
         classId: d2lClassId || undefined,
@@ -94,7 +94,7 @@ export default function Sidebar() {
         lastSyncedAt: new Date().toISOString()
       });
 
-      const res = await syncSingleICalFeed(feedId);
+      const res = await syncSingleICalFeed(newFeed);
 
       if (res.success) {
         setD2lUrl("");
