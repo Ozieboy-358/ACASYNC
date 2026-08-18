@@ -4,7 +4,7 @@ import { Class, AcademicEvent } from "@/lib/types";
 import styles from "./Dashboard.module.css";
 
 export default function Dashboard() {
-  const { classes, events, updateEvent, updateClass } = useAcademic();
+  const { classes, events, updateEvent, updateClass, objectives, toggleObjectiveStep, icalFeeds, syncAllICalFeeds, lastGlobalSync } = useAcademic();
   const [hypotheticalGrades, setHypotheticalGrades] = useState<Record<string, number>>({});
   const [targetGPA, setTargetGPA] = useState<string>("3.5");
 
@@ -198,6 +198,16 @@ export default function Dashboard() {
         </div>
 
         <div className={`${styles.statCard} glass`}>
+          <div className={styles.statIcon} style={{ color: '#3b82f6' }}>🎯</div>
+          <div className={styles.statInfo}>
+            <span className={styles.statValue}>
+              {objectives.filter(o => o.completed).length} / {objectives.length}
+            </span>
+            <span className={styles.statLabel}>Core Objectives</span>
+          </div>
+        </div>
+
+        <div className={`${styles.statCard} glass`}>
           <div className={styles.statIcon} style={{ color: '#fda4af' }}>📓</div>
           <div className={styles.statInfo}>
             <span className={styles.statValue}>{completedStudy} / {totalStudy}</span>
@@ -338,6 +348,55 @@ export default function Dashboard() {
           )}
         </section>
       </div>
+
+      {/* Core Objectives & Completion Guides Roadmap */}
+      <section className={`${styles.whatIfSection} glass`} style={{ marginBottom: '30px' }}>
+        <h2 className={styles.sectionTitle}>🎯 Core Objectives & Completion Guides Roadmap</h2>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '-10px', marginBottom: '15px' }}>
+          Actionable step-by-step guides for mastering class goals and completing key assignments.
+        </p>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
+          {objectives.slice(0, 6).map(obj => {
+            const completedSteps = obj.guides.filter(g => g.completed).length;
+            const totalSteps = obj.guides.length;
+            const pct = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
+            const cls = classes.find(c => c.id === obj.classId);
+
+            return (
+              <div key={obj.id} className="glass" style={{ padding: '16px', borderRadius: '12px', borderLeft: `4px solid ${cls?.color || 'var(--accent)'}` }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: cls?.color || 'var(--accent)' }}>
+                    {cls?.name || 'General'}
+                  </span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                    {pct}% Complete
+                  </span>
+                </div>
+                <h4 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '8px', color: obj.completed ? 'var(--text-secondary)' : 'var(--text-primary)', textDecoration: obj.completed ? 'line-through' : 'none' }}>
+                  {obj.title}
+                </h4>
+                <div style={{ width: '100%', height: '5px', background: 'rgba(255,255,255,0.1)', borderRadius: '3px', marginBottom: '10px', overflow: 'hidden' }}>
+                  <div style={{ width: `${pct}%`, height: '100%', background: 'var(--accent)', transition: 'width 0.3s' }} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {obj.guides.map(g => (
+                    <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', cursor: 'pointer', color: g.completed ? 'var(--text-secondary)' : 'var(--text-primary)' }}>
+                      <input 
+                        type="checkbox"
+                        checked={g.completed}
+                        onChange={() => toggleObjectiveStep(obj.id, g.id)}
+                        style={{ accentColor: 'var(--accent)' }}
+                      />
+                      <span style={{ textDecoration: g.completed ? 'line-through' : 'none' }}>{g.title}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
 
       {/* What-If GPA Calculator & Goal Planner */}
       <section className={`${styles.whatIfSection} glass`}>

@@ -1,7 +1,101 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Class, AcademicEvent, NotebookSource, Flashcard } from './types';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { Class, AcademicEvent, NotebookSource, Flashcard, CoreObjective, CompletionStep, SavedICalFeed } from './types';
+import axios from 'axios';
+
+// Helper to generate realistic default core objectives & guides for classes
+const generateDefaultObjectives = (classId: string, className: string): CoreObjective[] => {
+  const name = className.toLowerCase();
+  const now = new Date().toISOString();
+
+  if (name.includes('phys')) {
+    return [
+      {
+        id: `${classId}-obj1`,
+        classId,
+        title: "Master Kinematics & Newton's Laws of Motion",
+        description: "Understand 1D/2D displacement, velocity vectors, constant acceleration, and application of F = m*a in friction/incline problems.",
+        category: "exam",
+        targetDate: "2026-10-14",
+        completed: false,
+        createdAt: now,
+        guides: [
+          { id: "step-1", title: "Review Lecture 1 notes on Kinematic equations (v = v0 + at)", completed: true, notes: "Formulas memorized" },
+          { id: "step-2", title: "Draw Free Body Diagrams (FBD) for all 5 homework friction problems", completed: false },
+          { id: "step-3", title: "Solve Midterm practice exam Chapter 1-3 questions", completed: false },
+          { id: "step-4", title: "Verify lab experiment 2 vectors worksheet calculations on D2L", completed: false }
+        ]
+      },
+      {
+        id: `${classId}-obj2`,
+        classId,
+        title: "Complete Centripetal Force & Work-Energy Theorem Lab",
+        description: "Calculate circular motion dynamics (a_c = v^2/r) and perform work-energy balance analysis for lab report submission.",
+        category: "assignment",
+        targetDate: "2026-09-28",
+        completed: false,
+        createdAt: now,
+        guides: [
+          { id: "step-1", title: "Collect velocity and radius telemetry from physics lab sensor app", completed: true },
+          { id: "step-2", title: "Compute Kinetic Energy (0.5 * m * v^2) vs Potential Energy (m * g * h)", completed: false },
+          { id: "step-3", title: "Draft lab report discussion & submit PDF upload to D2L drop box", completed: false }
+        ]
+      }
+    ];
+  } else if (name.includes('computer') || name.includes('cs') || name.includes('algorithm') || name.includes('code')) {
+    return [
+      {
+        id: `${classId}-obj1`,
+        classId,
+        title: "Implement Binary Search Trees & Recursive Operations",
+        description: "Construct balanced BST node traversal algorithms (In-order, Pre-order, Post-order) and prove O(log n) time complexity.",
+        category: "project",
+        targetDate: "2026-10-18",
+        completed: false,
+        createdAt: now,
+        guides: [
+          { id: "step-1", title: "Review Big-O complexity tiers & recursive call stack overhead", completed: true },
+          { id: "step-2", title: "Write Java code for TreeNode insertion, deletion, and rotation logic", completed: false },
+          { id: "step-3", title: "Run JUnit unit test suite and verify edge cases (empty tree, duplicate keys)", completed: false },
+          { id: "step-4", title: "Submit code repository ZIP file to D2L portal before 11:59 PM deadline", completed: false }
+        ]
+      },
+      {
+        id: `${classId}-obj2`,
+        classId,
+        title: "Ace Data Structures Midterm Examination",
+        description: "Master Big-O analysis, Stacks/Queues LIFO vs FIFO, Linked Lists vs Arrays, and BST balancing.",
+        category: "exam",
+        targetDate: "2026-10-22",
+        completed: false,
+        createdAt: now,
+        guides: [
+          { id: "step-1", title: "Review flashcards on O(1) vs O(log n) vs O(n) algorithm complexities", completed: false },
+          { id: "step-2", title: "Solve 10 sample midterm questions on Mergesort vs Quicksort space bounds", completed: false },
+          { id: "step-3", title: "Attend instructor office hours on Wed 10:00 AM for graph traversal review", completed: false }
+        ]
+      }
+    ];
+  }
+  return [
+    {
+      id: `${classId}-obj1`,
+      classId,
+      title: `Achieve Mastery in ${className}`,
+      description: `Complete all required modules, assignments, and exam prep for ${className} according to course syllabus.`,
+      category: "course",
+      targetDate: "2026-12-15",
+      completed: false,
+      createdAt: now,
+      guides: [
+        { id: "step-1", title: "Review course syllabus & add key exam dates to AcaSync Calendar", completed: true },
+        { id: "step-2", title: "Sync D2L iCal feed to automatically track assignment due dates", completed: false },
+        { id: "step-3", title: "Upload course materials to NotebookLM for AI study guide generation", completed: false }
+      ]
+    }
+  ];
+};
 
 // Helper to generate realistic sample study sources when a class is loaded or created
 const generateDefaultSources = (classId: string, className: string): NotebookSource[] => {
@@ -25,7 +119,7 @@ Grading Weights & Breakdown:
 Key Class Deadlines & Events:
 - Midterm Exam is scheduled for October 14th in the Main Hall. It covers Chapters 1 through 5: Kinematics, Newton's Laws, Vectors, Work, and Mechanical Energy.
 - Final Exam is scheduled for December 15th in Lecture Hall B. It is a cumulative exam covering Chapters 1 to 12.
-- Lab Worksheets are due every Friday by 11:59 PM submitted online.
+- Lab Worksheets are due every Friday by 11:59 PM submitted online on D2L.
 
 Course Policies & Office Hours:
 - Office hours are held on Tuesday and Thursday from 2:00 PM to 4:00 PM in the Physics Building, Room 304.
@@ -276,8 +370,13 @@ interface AcademicContextType {
   events: AcademicEvent[];
   sources: NotebookSource[];
   flashcards: Flashcard[];
+  objectives: CoreObjective[];
+  icalFeeds: SavedICalFeed[];
+  lastGlobalSync: string | null;
+  isAutoSyncing: boolean;
+
   addClass: (cls: Omit<Class, 'id'>) => string;
-  addEvent: (event: Omit<AcademicEvent, 'id'>) => void;
+  addEvent: (event: Omit<AcademicEvent, 'id'>) => string;
   updateEvent: (event: AcademicEvent) => void;
   deleteEvent: (id: string) => void;
   updateClass: (cls: Class) => void;
@@ -287,6 +386,21 @@ interface AcademicContextType {
   addFlashcard: (fc: Omit<Flashcard, 'id'>) => void;
   updateFlashcard: (fc: Flashcard) => void;
   deleteFlashcard: (id: string) => void;
+
+  // Objectives & Guides methods
+  addObjective: (obj: Omit<CoreObjective, 'id' | 'createdAt'>) => string;
+  updateObjective: (obj: CoreObjective) => void;
+  deleteObjective: (id: string) => void;
+  toggleObjectiveStep: (objectiveId: string, stepId: string) => void;
+  generateObjectiveForAssignment: (event: AcademicEvent) => string;
+
+  // Saved iCal Feeds & Auto Sync methods
+  addICalFeed: (feed: Omit<SavedICalFeed, 'id'>) => string;
+  updateICalFeed: (feed: SavedICalFeed) => void;
+  deleteICalFeed: (id: string) => void;
+  syncAllICalFeeds: () => Promise<{ success: boolean; syncedEvents: number; errors: string[] }>;
+  syncSingleICalFeed: (feedId: string) => Promise<{ success: boolean; eventCount: number }>;
+
   currentView: 'calendar' | 'dashboard' | 'notebook';
   setCurrentView: (view: 'calendar' | 'dashboard' | 'notebook') => void;
   theme: string;
@@ -302,15 +416,24 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
   const [events, setEvents] = useState<AcademicEvent[]>([]);
   const [sources, setSources] = useState<NotebookSource[]>([]);
   const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
+  const [objectives, setObjectives] = useState<CoreObjective[]>([]);
+  const [icalFeeds, setIcalFeeds] = useState<SavedICalFeed[]>([]);
+  const [lastGlobalSync, setLastGlobalSync] = useState<string | null>(null);
+  const [isAutoSyncing, setIsAutoSyncing] = useState<boolean>(false);
+
   const [currentView, setCurrentView] = useState<'calendar' | 'dashboard' | 'notebook'>('calendar');
   const [theme, setTheme] = useState<string>('midnight');
   const [geminiKey, setGeminiKey] = useState<string>('');
 
+  // Load state from localStorage on initial render
   useEffect(() => {
     const savedClasses = localStorage.getItem('aca_classes');
     const savedEvents = localStorage.getItem('aca_events');
     const savedSources = localStorage.getItem('aca_sources');
     const savedFlashcards = localStorage.getItem('aca_flashcards');
+    const savedObjectives = localStorage.getItem('aca_objectives');
+    const savedFeeds = localStorage.getItem('aca_ical_feeds');
+    const savedLastSync = localStorage.getItem('aca_last_sync');
     const savedTheme = localStorage.getItem('aca_theme') || 'midnight';
     const savedKey = localStorage.getItem('aca_gemini_key') || '';
     
@@ -318,13 +441,16 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
     if (savedEvents) setEvents(JSON.parse(savedEvents));
     if (savedSources) setSources(JSON.parse(savedSources));
     if (savedFlashcards) setFlashcards(JSON.parse(savedFlashcards));
+    if (savedObjectives) setObjectives(JSON.parse(savedObjectives));
+    if (savedFeeds) setIcalFeeds(JSON.parse(savedFeeds));
+    if (savedLastSync) setLastGlobalSync(savedLastSync);
     if (savedKey) setGeminiKey(savedKey);
     
     setTheme(savedTheme);
     document.body.setAttribute('data-theme', savedTheme);
   }, []);
 
-  // Sync state to local storage
+  // Sync state to localStorage automatically
   useEffect(() => {
     localStorage.setItem('aca_classes', JSON.stringify(classes));
   }, [classes]);
@@ -342,6 +468,20 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
   }, [flashcards]);
 
   useEffect(() => {
+    localStorage.setItem('aca_objectives', JSON.stringify(objectives));
+  }, [objectives]);
+
+  useEffect(() => {
+    localStorage.setItem('aca_ical_feeds', JSON.stringify(icalFeeds));
+  }, [icalFeeds]);
+
+  useEffect(() => {
+    if (lastGlobalSync) {
+      localStorage.setItem('aca_last_sync', lastGlobalSync);
+    }
+  }, [lastGlobalSync]);
+
+  useEffect(() => {
     localStorage.setItem('aca_theme', theme);
     document.body.setAttribute('data-theme', theme);
   }, [theme]);
@@ -350,7 +490,7 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem('aca_gemini_key', geminiKey);
   }, [geminiKey]);
 
-  // Onboarding effect: Auto-generate default notebook sources and flashcards for existing classes
+  // Default initializers for demo data if user opens fresh app
   useEffect(() => {
     if (classes.length > 0 && sources.length === 0) {
       let defaultSources: NotebookSource[] = [];
@@ -371,42 +511,107 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
     }
   }, [classes, flashcards]);
 
+  useEffect(() => {
+    if (classes.length > 0 && objectives.length === 0) {
+      let defaultObjs: CoreObjective[] = [];
+      classes.forEach(c => {
+        defaultObjs = [...defaultObjs, ...generateDefaultObjectives(c.id, c.name)];
+      });
+      setObjectives(defaultObjs);
+    }
+  }, [classes, objectives]);
+
+  // Helper to ensure D2L materials & descriptions automatically convert into NotebookLM sources
+  const syncEventToNotebookSource = useCallback((event: AcademicEvent) => {
+    if (!event.classId) return;
+
+    // If event has description or materialUrl, ensure NotebookSource exists
+    if ((event.description && event.description.length > 10) || event.materialUrl) {
+      const sourceId = `source-${event.id}`;
+      setSources(prev => {
+        const existingIdx = prev.findIndex(s => s.id === sourceId || (s.classId === event.classId && s.title === event.title));
+        const newSourceContent = `${event.title} (${event.type.toUpperCase()})\nDue Date: ${event.date}\n${event.description || ''}\n${event.materialUrl ? `Link: ${event.materialUrl}` : ''}`;
+
+        if (existingIdx >= 0) {
+          const updated = [...prev];
+          updated[existingIdx] = {
+            ...updated[existingIdx],
+            content: newSourceContent,
+            wordCount: newSourceContent.trim().split(/\s+/).length
+          };
+          return updated;
+        } else {
+          return [
+            ...prev,
+            {
+              id: sourceId,
+              classId: event.classId,
+              title: `${event.title} [D2L Item]`,
+              type: event.materialUrl ? 'link' : 'd2l_material',
+              content: newSourceContent,
+              url: event.materialUrl,
+              wordCount: newSourceContent.trim().split(/\s+/).length,
+              addedAt: new Date().toISOString()
+            }
+          ];
+        }
+      });
+    }
+  }, []);
+
   const addClass = (cls: Omit<Class, 'id'>): string => {
     const classId = Math.random().toString(36).substr(2, 9);
     const newClass = { ...cls, id: classId };
-    setClasses([...classes, newClass]);
+    setClasses(prev => [...prev, newClass]);
     
-    // Auto-generate default sources & flashcards for new classes
+    // Auto-generate default sources, flashcards & objectives for new classes
     const defaultSources = generateDefaultSources(classId, cls.name);
     setSources(prev => [...prev, ...defaultSources]);
 
     const defaultFCs = generateDefaultFlashcards(classId, cls.name);
     setFlashcards(prev => [...prev, ...defaultFCs]);
+
+    const defaultObjs = generateDefaultObjectives(classId, cls.name);
+    setObjectives(prev => [...prev, ...defaultObjs]);
+
     return classId;
   };
 
-  const addEvent = (event: Omit<AcademicEvent, 'id'>) => {
-    const newEvent = { ...event, id: Math.random().toString(36).substr(2, 9) };
-    setEvents([...events, newEvent]);
+  const addEvent = (event: Omit<AcademicEvent, 'id'>): string => {
+    const eventId = Math.random().toString(36).substr(2, 9);
+    const newEvent: AcademicEvent = { ...event, id: eventId };
+    setEvents(prev => [...prev, newEvent]);
+
+    // Auto-sync D2L / assignment materials into NotebookLM
+    syncEventToNotebookSource(newEvent);
+
+    // Auto generate completion guide if none attached
+    if (!newEvent.completionSteps || newEvent.completionSteps.length === 0) {
+      generateObjectiveForAssignment(newEvent);
+    }
+
+    return eventId;
   };
 
   const updateEvent = (updated: AcademicEvent) => {
-    setEvents(events.map(e => e.id === updated.id ? updated : e));
+    setEvents(prev => prev.map(e => e.id === updated.id ? updated : e));
+    syncEventToNotebookSource(updated);
   };
 
   const deleteEvent = (id: string) => {
-    setEvents(events.filter(e => e.id !== id));
+    setEvents(prev => prev.filter(e => e.id !== id));
   };
 
   const updateClass = (updated: Class) => {
-    setClasses(classes.map(c => c.id === updated.id ? updated : c));
+    setClasses(prev => prev.map(c => c.id === updated.id ? updated : c));
   };
 
   const deleteClass = (id: string) => {
-    setClasses(classes.filter(c => c.id !== id));
-    setEvents(events.filter(e => e.classId !== id)); // Clean up events for deleted class
-    setSources(prev => prev.filter(s => s.classId !== id)); // Clean up sources for deleted class
-    setFlashcards(prev => prev.filter(f => f.classId !== id)); // Clean up flashcards for deleted class
+    setClasses(prev => prev.filter(c => c.id !== id));
+    setEvents(prev => prev.filter(e => e.classId !== id)); 
+    setSources(prev => prev.filter(s => s.classId !== id)); 
+    setFlashcards(prev => prev.filter(f => f.classId !== id)); 
+    setObjectives(prev => prev.filter(o => o.classId !== id));
   };
 
   const addSource = (source: Omit<NotebookSource, 'id' | 'addedAt'>) => {
@@ -438,12 +643,173 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
     setFlashcards(prev => prev.filter(f => f.id !== id));
   };
 
+  // Objectives & Guides methods
+  const addObjective = (obj: Omit<CoreObjective, 'id' | 'createdAt'>): string => {
+    const objId = Math.random().toString(36).substr(2, 9);
+    const newObj: CoreObjective = {
+      ...obj,
+      id: objId,
+      createdAt: new Date().toISOString()
+    };
+    setObjectives(prev => [...prev, newObj]);
+    return objId;
+  };
+
+  const updateObjective = (updated: CoreObjective) => {
+    setObjectives(prev => prev.map(o => o.id === updated.id ? updated : o));
+  };
+
+  const deleteObjective = (id: string) => {
+    setObjectives(prev => prev.filter(o => o.id !== id));
+  };
+
+  const toggleObjectiveStep = (objectiveId: string, stepId: string) => {
+    setObjectives(prev => prev.map(obj => {
+      if (obj.id !== objectiveId) return obj;
+      const updatedGuides = obj.guides.map(g => g.id === stepId ? { ...g, completed: !g.completed } : g);
+      const allCompleted = updatedGuides.length > 0 && updatedGuides.every(g => g.completed);
+      return {
+        ...obj,
+        guides: updatedGuides,
+        completed: allCompleted
+      };
+    }));
+  };
+
+  const generateObjectiveForAssignment = (event: AcademicEvent): string => {
+    const defaultSteps: CompletionStep[] = [
+      { id: "s-1", title: `Read problem statement & D2L guidelines for ${event.title}`, completed: false },
+      { id: "s-2", title: `Review related lecture notes and NotebookLM sources`, completed: false },
+      { id: "s-3", title: `Draft initial solution & verify calculations/code`, completed: false },
+      { id: "s-4", title: `Upload final deliverable PDF/ZIP to D2L drop box before ${event.date}`, completed: false }
+    ];
+
+    const objId = Math.random().toString(36).substr(2, 9);
+    const newObj: CoreObjective = {
+      id: objId,
+      classId: event.classId,
+      title: `Complete ${event.title} (${event.type.toUpperCase()})`,
+      description: event.description || `Required ${event.type} for grade weight (${event.weight || 10}%). Target due date: ${event.date}.`,
+      category: event.type === 'exam' || event.type === 'quiz' ? 'exam' : 'assignment',
+      targetDate: event.date,
+      completed: false,
+      guides: defaultSteps,
+      createdAt: new Date().toISOString()
+    };
+
+    setObjectives(prev => [...prev, newObj]);
+    return objId;
+  };
+
+  // iCal / D2L Saved Feeds methods
+  const addICalFeed = (feed: Omit<SavedICalFeed, 'id'>): string => {
+    const feedId = Math.random().toString(36).substr(2, 9);
+    const newFeed: SavedICalFeed = { ...feed, id: feedId };
+    setIcalFeeds(prev => [...prev, newFeed]);
+    return feedId;
+  };
+
+  const updateICalFeed = (updated: SavedICalFeed) => {
+    setIcalFeeds(prev => prev.map(f => f.id === updated.id ? updated : f));
+  };
+
+  const deleteICalFeed = (id: string) => {
+    setIcalFeeds(prev => prev.filter(f => f.id !== id));
+  };
+
+  const syncSingleICalFeed = async (feedId: string): Promise<{ success: boolean; eventCount: number }> => {
+    const feed = icalFeeds.find(f => f.id === feedId);
+    if (!feed) return { success: false, eventCount: 0 };
+
+    try {
+      const res = await axios.get(`/api/d2l?url=${encodeURIComponent(feed.url)}`);
+      const fetchedEvents = res.data.events || [];
+      
+      let targetClassId = feed.classId;
+      if (!targetClassId) {
+        let matchingClass = classes.find(c => c.name.toLowerCase() === feed.name.toLowerCase());
+        if (!matchingClass) {
+          targetClassId = addClass({ name: feed.name, color: '#ff8c00', credits: 3 });
+        } else {
+          targetClassId = matchingClass.id;
+        }
+      }
+
+      let addedCount = 0;
+      fetchedEvents.forEach((ev: any) => {
+        const exists = events.some(e => e.title === ev.title && e.date === ev.date);
+        if (!exists) {
+          addEvent({
+            title: ev.title,
+            classId: targetClassId!,
+            date: ev.date,
+            type: ev.title.toLowerCase().includes('quiz') ? 'quiz' : ev.title.toLowerCase().includes('exam') ? 'exam' : 'assignment',
+            description: ev.description || '',
+            materialUrl: ev.location || undefined,
+            weight: 10,
+            totalScore: 100,
+            completed: false,
+            icalFeedId: feed.id
+          });
+          addedCount++;
+        }
+      });
+
+      const nowStr = new Date().toISOString();
+      updateICalFeed({
+        ...feed,
+        lastSyncedAt: nowStr,
+        eventCount: (feed.eventCount || 0) + addedCount
+      });
+
+      return { success: true, eventCount: fetchedEvents.length };
+    } catch (err) {
+      console.error(`Error syncing feed ${feed.name}:`, err);
+      return { success: false, eventCount: 0 };
+    }
+  };
+
+  const syncAllICalFeeds = async (): Promise<{ success: boolean; syncedEvents: number; errors: string[] }> => {
+    if (icalFeeds.length === 0) return { success: true, syncedEvents: 0, errors: [] };
+
+    setIsAutoSyncing(true);
+    let totalEvents = 0;
+    const errors: string[] = [];
+
+    for (const feed of icalFeeds) {
+      if (!feed.autoSync && feed.lastSyncedAt) continue;
+      const res = await syncSingleICalFeed(feed.id);
+      if (res.success) {
+        totalEvents += res.eventCount;
+      } else {
+        errors.push(`Failed feed: ${feed.name}`);
+      }
+    }
+
+    const nowStr = new Date().toISOString();
+    setLastGlobalSync(nowStr);
+    setIsAutoSyncing(false);
+    return { success: errors.length === 0, syncedEvents: totalEvents, errors };
+  };
+
+  // Auto-sync iCal feeds on initial mount if feeds exist
+  useEffect(() => {
+    if (icalFeeds.length > 0) {
+      syncAllICalFeeds().catch(err => console.error("Auto sync failed on mount", err));
+    }
+  }, []); // Run once on startup
+
   return (
     <AcademicContext.Provider value={{ 
       classes, 
       events, 
       sources,
       flashcards,
+      objectives,
+      icalFeeds,
+      lastGlobalSync,
+      isAutoSyncing,
+
       addClass, 
       addEvent,
       updateEvent,
@@ -455,6 +821,19 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
       addFlashcard,
       updateFlashcard,
       deleteFlashcard,
+
+      addObjective,
+      updateObjective,
+      deleteObjective,
+      toggleObjectiveStep,
+      generateObjectiveForAssignment,
+
+      addICalFeed,
+      updateICalFeed,
+      deleteICalFeed,
+      syncAllICalFeeds,
+      syncSingleICalFeed,
+
       currentView,
       setCurrentView,
       theme,
@@ -474,4 +853,3 @@ export function useAcademic() {
   }
   return context;
 }
-

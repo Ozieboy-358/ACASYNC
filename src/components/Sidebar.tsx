@@ -16,6 +16,17 @@ export default function Sidebar() {
     deleteClass, 
     events, 
     addEvent, 
+    objectives,
+    toggleObjectiveStep,
+    addObjective,
+    deleteObjective,
+    icalFeeds,
+    addICalFeed,
+    deleteICalFeed,
+    syncAllICalFeeds,
+    syncSingleICalFeed,
+    isAutoSyncing,
+    lastGlobalSync,
     currentView, 
     setCurrentView,
     theme,
@@ -26,10 +37,11 @@ export default function Sidebar() {
   const [isClassModalOpen, setIsClassModalOpen] = useState(false);
   const [isEditClassModalOpen, setIsEditClassModalOpen] = useState(false);
   const [isD2LModalOpen, setIsD2LModalOpen] = useState(false);
+  const [isFeedsModalOpen, setIsFeedsModalOpen] = useState(false);
   const [isSyllabusModalOpen, setIsSyllabusModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [selectedClass, setSelectedClass] = useState<Class | null>(null);
-  const [activeTab, setActiveTab] = useState<'materials' | 'grades' | 'notebook'>('materials');
+  const [activeTab, setActiveTab] = useState<'materials' | 'objectives' | 'grades' | 'notebook'>('objectives');
   const [syllabusText, setSyllabusText] = useState("");
   const [isParsingSyllabus, setIsParsingSyllabus] = useState(false);
   
@@ -45,14 +57,23 @@ export default function Sidebar() {
   const [editNotebookUrl, setEditNotebookUrl] = useState("");
   const [editClassCredits, setEditClassCredits] = useState(3);
 
+  // D2L / iCal Feed form state
   const [d2lUrl, setD2lUrl] = useState("");
+  const [d2lFeedName, setD2lFeedName] = useState("");
+  const [d2lClassId, setD2lClassId] = useState("");
   const [isSyncing, setIsSyncing] = useState(false);
+
+  // Objective form state inside class view
+  const [isAddObjectiveOpen, setIsAddObjectiveOpen] = useState(false);
+  const [newObjTitle, setNewObjTitle] = useState("");
+  const [newObjDesc, setNewObjDesc] = useState("");
+  const [newObjGuideSteps, setNewObjGuideSteps] = useState("");
 
   useEffect(() => {
     initGoogleApi();
   }, []);
 
-  const handleSync = async () => {
+  const handleSyncGoogle = async () => {
     await syncToGoogle(events);
   };
 
@@ -62,29 +83,31 @@ export default function Sidebar() {
 
     setIsSyncing(true);
     try {
-      const response = await axios.get(`/api/d2l?url=${encodeURIComponent(d2lUrl)}`);
-      const newEvents = response.data.events;
-
-      newEvents.forEach((event: any) => {
-        const exists = events.find(e => e.title === event.title && e.date === event.date);
-        if (!exists) {
-          addEvent({
-            ...event,
-            classId: "d2l-sync"
-          });
-        }
+      const feedName = d2lFeedName.trim() || "D2L Course Feed";
+      
+      // Save iCal Feed so it automatically updates & saves import data
+      const feedId = addICalFeed({
+        name: feedName,
+        url: d2lUrl.trim(),
+        classId: d2lClassId || undefined,
+        autoSync: true,
+        lastSyncedAt: new Date().toISOString()
       });
 
-      if (!classes.find(c => c.name === "D2L Sync")) {
-        addClass({ name: "D2L Sync", color: "#ff8c00", credits: 0 });
-      }
+      const res = await syncSingleICalFeed(feedId);
 
-      setD2lUrl("");
-      setIsD2LModalOpen(false);
-      alert(`Synced ${newEvents.length} events from D2L!`);
+      if (res.success) {
+        setD2lUrl("");
+        setD2lFeedName("");
+        setD2lClassId("");
+        setIsD2LModalOpen(false);
+        alert(`Successfully saved iCal feed "${feedName}" & imported ${res.eventCount} events!`);
+      } else {
+        alert("Saved feed, but failed to fetch initial data. Check the URL.");
+      }
     } catch (err) {
       console.error(err);
-      alert("Failed to sync D2L. Please check the URL.");
+      alert("Failed to sync D2L iCal feed. Please verify the link.");
     } finally {
       setIsSyncing(false);
     }
@@ -100,13 +123,9 @@ export default function Sidebar() {
         const prompt = `You are an academic syllabus parser. Analyze the syllabus text below and extract:
 1. Course Name (e.g. "Linear Algebra", "Introduction to Biology")
 2. Course Credits (as a number, e.g. 3 or 4. If not found, guess 3)
-3. Course Color (a hexadecimal color code, e.g. "#8b5cf6", "#3b82f6", "#10b981", "#ff8c00". Choose a distinct, premium-looking color)
-4. All assignments, exams, quizzes, or materials, with their respective dates. Convert dates into YYYY-MM-DD format (use current year 2026 if not specified).
-For each event, also extract:
-- Type: "assignment", "exam", "quiz", or "material"
-- Weight (as a percentage, e.g. 10. If not specified, choose standard: homeworks 5%, quizzes 10%, midterm 25%, final exam 30%-40%)
-- Description: details about the event
-- TotalScore: e.g. 100
+3. Course Color (a hexadecimal color code, e.g. "#8b5cf6", "#3b82f6", "#10b981", "#ff8c00")
+4. All assignments, exams, quizzes, or materials, with their respective dates (YYYY-MM-DD format, default year 2026).
+5. Core Learning Objectives & Step-by-step Guides to completion for each objective.
 
 Format your reply strictly as a JSON object of this structure:
 {
@@ -123,10 +142,17 @@ Format your reply strictly as a JSON object of this structure:
       "totalScore": 100,
       "description": "..."
     }
+  ],
+  "objectives": [
+    {
+      "title": "...",
+      "description": "...",
+      "guides": ["Step 1...", "Step 2..."]
+    }
   ]
 }
 
-No markdown tags or formatting outside the JSON block.
+No markdown tags outside the JSON block.
 
 Syllabus Text:
 ${syllabusText}`;
@@ -167,14 +193,28 @@ ${syllabusText}`;
           });
         }
 
-        alert(`Successfully imported "${parsed.className}" with ${parsed.events?.length || 0} events!`);
+        if (parsed.objectives && Array.isArray(parsed.objectives)) {
+          parsed.objectives.forEach((obj: any) => {
+            addObjective({
+              classId,
+              title: obj.title,
+              description: obj.description || '',
+              completed: false,
+              guides: (obj.guides || []).map((stepText: string, idx: number) => ({
+                id: `step-${idx}`,
+                title: stepText,
+                completed: false
+              }))
+            });
+          });
+        }
+
+        alert(`Successfully imported "${parsed.className}" with ${parsed.events?.length || 0} events and core objectives!`);
         setIsSyllabusModalOpen(false);
         setSyllabusText("");
       } else {
-        // Fallback offline generator
-        alert("Gemini Developer Key is not configured. Creating a mock class based on key syllabus elements.");
+        alert("Using smart offline generator for syllabus import.");
         
-        // Let's create a basic class
         const classId = addClass({
           name: "Syllabus Class (Offline)",
           color: "#0ea5e9",
@@ -201,13 +241,13 @@ ${syllabusText}`;
           });
         });
 
-        alert("Successfully imported mock class and schedule!");
+        alert("Successfully imported mock class with calendar schedule!");
         setIsSyllabusModalOpen(false);
         setSyllabusText("");
       }
     } catch (err) {
       console.error(err);
-      alert("Failed to parse syllabus. Make sure it is clear or check your Gemini Key.");
+      alert("Failed to parse syllabus. Please verify text format.");
     } finally {
       setIsParsingSyllabus(false);
     }
@@ -257,8 +297,39 @@ ${syllabusText}`;
     }
   };
 
+  const handleCreateObjective = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (selectedClass && newObjTitle.trim()) {
+      const stepsArray = newObjGuideSteps
+        .split("\n")
+        .filter(s => s.trim().length > 0)
+        .map((s, idx) => ({
+          id: `step-custom-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+          title: s.trim(),
+          completed: false
+        }));
+
+      addObjective({
+        classId: selectedClass.id,
+        title: newObjTitle.trim(),
+        description: newObjDesc.trim(),
+        completed: false,
+        guides: stepsArray.length > 0 ? stepsArray : [
+          { id: "s1", title: "Review lecture notes & D2L materials", completed: false },
+          { id: "s2", title: "Draft solution & submit on D2L", completed: false }
+        ]
+      });
+
+      setNewObjTitle("");
+      setNewObjDesc("");
+      setNewObjGuideSteps("");
+      setIsAddObjectiveOpen(false);
+    }
+  };
+
   const classMaterials = events.filter(e => e.classId === selectedClass?.id && e.type === 'material');
   const classAssignments = events.filter(e => e.classId === selectedClass?.id && e.score !== undefined);
+  const classObjectives = objectives.filter(o => o.classId === selectedClass?.id);
 
   const calculateGrade = () => {
     if (classAssignments.length === 0) return "N/A";
@@ -318,7 +389,7 @@ ${syllabusText}`;
                   className={`${styles.actionIconBtn} ${styles.actionIconBtnDelete}`} 
                   title="Delete Class" 
                   onClick={() => {
-                    if (confirm(`Delete "${selectedClass.name}" and all its tasks/grades?`)) {
+                    if (confirm(`Delete "${selectedClass.name}" and all its tasks/grades/objectives?`)) {
                       deleteClass(selectedClass.id);
                       setSelectedClass(null);
                     }
@@ -329,26 +400,112 @@ ${syllabusText}`;
               </div>
             </header>
 
-            <div className={styles.tabs}>
+            <div className={styles.tabs} style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px' }}>
+              <button 
+                className={`${styles.tab} ${activeTab === 'objectives' ? styles.tabActive : ""}`}
+                onClick={() => setActiveTab('objectives')}
+                style={{ padding: '8px 4px', fontSize: '11px' }}
+              >
+                Objectives
+              </button>
               <button 
                 className={`${styles.tab} ${activeTab === 'materials' ? styles.tabActive : ""}`}
                 onClick={() => setActiveTab('materials')}
+                style={{ padding: '8px 4px', fontSize: '11px' }}
               >
                 Materials
               </button>
               <button 
                 className={`${styles.tab} ${activeTab === 'grades' ? styles.tabActive : ""}`}
                 onClick={() => setActiveTab('grades')}
+                style={{ padding: '8px 4px', fontSize: '11px' }}
               >
                 Grades
               </button>
               <button 
                 className={`${styles.tab} ${activeTab === 'notebook' ? styles.tabActive : ""}`}
                 onClick={() => setActiveTab('notebook')}
+                style={{ padding: '8px 4px', fontSize: '11px' }}
               >
                 Notebook
               </button>
             </div>
+
+            {/* Core Objectives & Completion Guides */}
+            {activeTab === 'objectives' && (
+              <div className={styles.objectivesView} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                    CORE OBJECTIVES & GUIDES
+                  </span>
+                  <button 
+                    onClick={() => setIsAddObjectiveOpen(true)}
+                    style={{ fontSize: '12px', color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+                  >
+                    + Add Objective
+                  </button>
+                </div>
+
+                {classObjectives.map(obj => {
+                  const completedSteps = obj.guides.filter(g => g.completed).length;
+                  const totalSteps = obj.guides.length;
+                  const percent = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
+
+                  return (
+                    <div key={obj.id} className="glass" style={{ padding: '14px', borderRadius: '12px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                        <h4 style={{ fontSize: '14px', fontWeight: 600, color: obj.completed ? 'var(--text-secondary)' : 'var(--text-primary)', textDecoration: obj.completed ? 'line-through' : 'none' }}>
+                          {obj.title}
+                        </h4>
+                        <button 
+                          onClick={() => deleteObjective(obj.id)}
+                          style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: '12px', cursor: 'pointer', padding: '0 4px' }}
+                          title="Delete objective"
+                        >
+                          ✕
+                        </button>
+                      </div>
+
+                      {obj.description && (
+                        <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '10px', lineHeight: 1.4 }}>
+                          {obj.description}
+                        </p>
+                      )}
+
+                      {/* Progress bar */}
+                      <div style={{ marginBottom: '10px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                          <span>Completion Guide</span>
+                          <span>{percent}%</span>
+                        </div>
+                        <div style={{ width: '100%', height: '5px', background: 'rgba(255,255,255,0.1)', borderRadius: '3px', overflow: 'hidden' }}>
+                          <div style={{ width: `${percent}%`, height: '100%', background: 'var(--accent)', transition: 'width 0.3s' }} />
+                        </div>
+                      </div>
+
+                      {/* Guide Steps checklist */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {obj.guides.map(g => (
+                          <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', cursor: 'pointer', color: g.completed ? 'var(--text-secondary)' : 'var(--text-primary)' }}>
+                            <input 
+                              type="checkbox"
+                              checked={g.completed}
+                              onChange={() => toggleObjectiveStep(obj.id, g.id)}
+                              style={{ accentColor: 'var(--accent)' }}
+                            />
+                            <span style={{ textDecoration: g.completed ? 'line-through' : 'none' }}>{g.title}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {classObjectives.length === 0 && (
+                  <p className={styles.emptyMsg}>No core objectives added for this class yet. Click "+ Add Objective" above.</p>
+                )}
+              </div>
+            )}
 
             {activeTab === 'materials' && (
               <div className={styles.materialsList}>
@@ -395,7 +552,7 @@ ${syllabusText}`;
                 <div className={`${styles.notebookInfo} glass`}>
                   <div className={styles.notebookIcon}>📓</div>
                   <p className={styles.notebookText}>
-                    Analyze your syllabus, lecture notes, and materials using our built-in NotebookLM workspace, or open the external application.
+                    Analyze your syllabus, D2L materials, and lecture notes for <strong>{selectedClass.name}</strong> using NotebookLM.
                   </p>
                   <button 
                     onClick={() => {
@@ -405,25 +562,8 @@ ${syllabusText}`;
                     className="btn-primary"
                     style={{ marginTop: '16px', display: 'block', width: '100%', cursor: 'pointer' }}
                   >
-                    Enter Local Workspace
+                    Enter Class NotebookLM
                   </button>
-                  <a 
-                    href={selectedClass.notebookUrl || "https://notebooklm.google.com/"} 
-                    target="_blank" 
-                    rel="noreferrer"
-                    className="btn-primary"
-                    style={{ 
-                      marginTop: '10px', 
-                      display: 'block', 
-                      textAlign: 'center', 
-                      backgroundColor: 'transparent', 
-                      border: '1px solid var(--accent)', 
-                      color: 'var(--foreground)', 
-                      boxShadow: 'none' 
-                    }}
-                  >
-                    Open External Link
-                  </a>
                 </div>
               </div>
             )}
@@ -503,7 +643,7 @@ ${syllabusText}`;
                 </div>
 
                 <div className={styles.section}>
-                  <h2 className={styles.sectionTitle}>Upcoming</h2>
+                  <h2 className={styles.sectionTitle}>Upcoming Assignments</h2>
                   <div className={styles.eventList}>
                     {events
                       .filter(e => e.type !== 'material' && !e.completed)
@@ -525,7 +665,7 @@ ${syllabusText}`;
                         );
                       })}
                     {events.filter(e => e.type !== 'material' && !e.completed).length === 0 && (
-                      <p className={styles.emptyMsg}>No upcoming events.</p>
+                      <p className={styles.emptyMsg}>No upcoming assignments.</p>
                     )}
                   </div>
                 </div>
@@ -540,15 +680,23 @@ ${syllabusText}`;
                     <line x1="16" y1="17" x2="8" y2="17" />
                     <polyline points="10 9 9 9 8 9" />
                   </svg>
-                  AI Syllabus Import
+                  AI Syllabus & Guide Import
                 </button>
                 <button className={`${styles.syncBtn} glass-interactive`} onClick={() => setIsD2LModalOpen(true)} style={{ marginBottom: '10px' }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M12 2v20m10-10H2" />
                   </svg>
-                  Import from D2L
+                  Import D2L / iCal Feed
                 </button>
-                <button className={`${styles.syncBtn} glass-interactive`} onClick={handleSync} style={{ marginBottom: '16px' }}>
+                <button className={`${styles.syncBtn} glass-interactive`} onClick={() => setIsFeedsModalOpen(true)} style={{ marginBottom: '10px' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M4 11a9 9 0 0 1 9 9" />
+                    <path d="M4 4a16 16 0 0 1 16 16" />
+                    <circle cx="5" cy="19" r="1" />
+                  </svg>
+                  Manage iCal Feeds ({icalFeeds.length})
+                </button>
+                <button className={`${styles.syncBtn} glass-interactive`} onClick={handleSyncGoogle} style={{ marginBottom: '16px' }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M21 2v6h-6M3 12a9 9 0 0115-6.7L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.7L3 16" />
                   </svg>
@@ -587,14 +735,58 @@ ${syllabusText}`;
         )}
       </aside>
 
+      {/* Add Objective Modal inside Class View */}
+      <Modal
+        isOpen={isAddObjectiveOpen}
+        onClose={() => setIsAddObjectiveOpen(false)}
+        title="Add Core Objective & Guide"
+      >
+        <form onSubmit={handleCreateObjective} className={styles.form}>
+          <div className={styles.formGroup}>
+            <label>Objective Title</label>
+            <input 
+              type="text"
+              value={newObjTitle}
+              onChange={(e) => setNewObjTitle(e.target.value)}
+              placeholder="e.g. Master Binary Search Trees & Recursion"
+              className={styles.input}
+              required
+              autoFocus
+            />
+          </div>
+          <div className={styles.formGroup}>
+            <label>Description / Target Goal</label>
+            <input 
+              type="text"
+              value={newObjDesc}
+              onChange={(e) => setNewObjDesc(e.target.value)}
+              placeholder="e.g. Prepare for midterm exam and programming project 2"
+              className={styles.input}
+            />
+          </div>
+          <div className={styles.formGroup}>
+            <label>Completion Guide Steps (One step per line)</label>
+            <textarea
+              value={newObjGuideSteps}
+              onChange={(e) => setNewObjGuideSteps(e.target.value)}
+              placeholder={"Step 1: Read Chapter 3 notes on BST balancing\nStep 2: Solve practice problem set on D2L\nStep 3: Submit code repository"}
+              className={styles.input}
+              style={{ minHeight: '120px', resize: 'vertical' }}
+            />
+          </div>
+          <button type="submit" className="btn-primary">Save Core Objective</button>
+        </form>
+      </Modal>
+
+      {/* AI Syllabus Modal */}
       <Modal 
         isOpen={isSyllabusModalOpen} 
         onClose={() => setIsSyllabusModalOpen(false)} 
-        title="AI Syllabus Scheduler"
+        title="AI Syllabus Scheduler & Objective Builder"
       >
         <form onSubmit={handleSyllabusSync} className={styles.form}>
           <p className={styles.instructionText}>
-            Upload a syllabus document or paste its text. We'll use Gemini to automatically create the course, configure grade weights, and schedule all tests and assignments on your calendar.
+            Upload a syllabus document or paste its text. Gemini will extract the course, configure grade weights, schedule tests/assignments on your calendar, and create Core Objectives with Completion Guides!
           </p>
           <div className={styles.formGroup}>
             <label>Upload Syllabus file (.txt, .md)</label>
@@ -611,7 +803,7 @@ ${syllabusText}`;
             <textarea 
               value={syllabusText} 
               onChange={(e) => setSyllabusText(e.target.value)}
-              placeholder="Paste the syllabus outline, course schedule, and grading weights here..."
+              placeholder="Paste syllabus outline, schedule, and grade breakdown..."
               className={styles.input}
               style={{ minHeight: '180px', resize: 'vertical', fontFamily: 'inherit', padding: '10px' }}
               required
@@ -632,36 +824,119 @@ ${syllabusText}`;
               disabled={isParsingSyllabus || !syllabusText.trim()}
               style={{ flex: 1 }}
             >
-              {isParsingSyllabus ? "Processing via AI..." : "Build Schedule"}
+              {isParsingSyllabus ? "Processing via AI..." : "Build Schedule & Guides"}
             </button>
           </div>
         </form>
       </Modal>
 
+      {/* D2L iCal Feed Sync & Auto-Save Modal */}
       <Modal 
         isOpen={isD2LModalOpen} 
         onClose={() => setIsD2LModalOpen(false)} 
-        title="Sync with D2L Brightspace"
+        title="Import & Save D2L / iCal Subscription"
       >
         <form onSubmit={handleD2LSync} className={styles.form}>
           <p className={styles.instructionText}>
-            Paste your D2L iCal subscription URL below. You can find this in your D2L Calendar Settings.
+            Paste your D2L or Canvas iCal subscription URL below. AcaSync will automatically save this feed and keep your assignments auto-synced across sessions!
           </p>
           <div className={styles.formGroup}>
-            <label>iCal URL</label>
+            <label>Feed Name / Label</label>
+            <input 
+              type="text" 
+              value={d2lFeedName} 
+              onChange={(e) => setD2lFeedName(e.target.value)}
+              placeholder="e.g. Fall Semester D2L Feed"
+              className={styles.input}
+            />
+          </div>
+          <div className={styles.formGroup}>
+            <label>iCal Feed URL (webcal:// or https://)</label>
             <input 
               type="url" 
               value={d2lUrl} 
               onChange={(e) => setD2lUrl(e.target.value)}
               placeholder="https://.../feed.ics"
               className={styles.input}
+              required
               autoFocus
             />
           </div>
+          <div className={styles.formGroup}>
+            <label>Link to Class (Optional)</label>
+            <select 
+              value={d2lClassId} 
+              onChange={(e) => setD2lClassId(e.target.value)}
+              className={styles.input}
+            >
+              <option value="">Auto-create or match existing class</option>
+              {classes.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
           <button type="submit" className="btn-primary" disabled={isSyncing}>
-            {isSyncing ? "Syncing..." : "Sync Assignments"}
+            {isSyncing ? "Saving & Syncing Feed..." : "Save Feed & Sync Assignments"}
           </button>
         </form>
+      </Modal>
+
+      {/* Manage iCal Feeds Modal */}
+      <Modal
+        isOpen={isFeedsModalOpen}
+        onClose={() => setIsFeedsModalOpen(false)}
+        title="Saved iCal & D2L Feeds"
+      >
+        <div className={styles.form}>
+          <p className={styles.instructionText}>
+            These subscription feeds automatically save and update your assignments every time you launch AcaSync.
+          </p>
+          
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
+            <button 
+              className="btn-primary" 
+              onClick={async () => {
+                const res = await syncAllICalFeeds();
+                alert(`Refreshed ${icalFeeds.length} saved feeds! Total events synced: ${res.syncedEvents}`);
+              }}
+              disabled={isAutoSyncing || icalFeeds.length === 0}
+              style={{ flex: 1 }}
+            >
+              {isAutoSyncing ? "Refreshing All Feeds..." : "Refresh All Feeds Now"}
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '250px', overflowY: 'auto' }}>
+            {icalFeeds.map(feed => (
+              <div key={feed.id} className="glass" style={{ padding: '12px', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <h4 style={{ fontSize: '14px', fontWeight: 600 }}>{feed.name}</h4>
+                  <p style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                    {feed.lastSyncedAt ? `Last synced: ${new Date(feed.lastSyncedAt).toLocaleString()}` : 'Not synced yet'}
+                  </p>
+                </div>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button 
+                    onClick={() => syncSingleICalFeed(feed.id)}
+                    style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: 'var(--text-primary)', padding: '6px 10px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}
+                  >
+                    Sync
+                  </button>
+                  <button 
+                    onClick={() => deleteICalFeed(feed.id)}
+                    style={{ background: 'rgba(239,68,68,0.15)', border: 'none', color: '#ef4444', padding: '6px 10px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            {icalFeeds.length === 0 && (
+              <p className={styles.emptyMsg}>No saved iCal feeds yet. Click "Import D2L / iCal Feed" to add one.</p>
+            )}
+          </div>
+        </div>
       </Modal>
 
       <Modal 
@@ -774,4 +1049,3 @@ ${syllabusText}`;
     </>
   );
 }
-

@@ -34,6 +34,10 @@ export default function NotebookLM() {
     addFlashcard,
     updateFlashcard,
     deleteFlashcard,
+    objectives,
+    addObjective,
+    deleteObjective,
+    toggleObjectiveStep,
     geminiKey,
     setGeminiKey
   } = useAcademic();
@@ -44,7 +48,7 @@ export default function NotebookLM() {
   
   // Tab states
   const [activeTab, setActiveTab] = useState<"chat" | "studio" | "audio">("chat");
-  const [studioSubTab, setStudioSubTab] = useState<"guide" | "faq" | "quiz" | "flashcards">("guide");
+  const [studioSubTab, setStudioSubTab] = useState<"objectives" | "guide" | "faq" | "quiz" | "flashcards">("objectives");
 
   // Chat states
   const [chatQuery, setChatQuery] = useState("");
@@ -114,6 +118,12 @@ export default function NotebookLM() {
     if (selectedClassId === "all") return sources;
     return sources.filter(s => s.classId === selectedClassId);
   }, [sources, selectedClassId]);
+
+  // Filter core objectives based on selected class
+  const filteredObjectives = useMemo(() => {
+    if (selectedClassId === "all") return objectives;
+    return objectives.filter(o => o.classId === selectedClassId);
+  }, [objectives, selectedClassId]);
 
   // Handle default checking of sources when selected class changes
   useEffect(() => {
@@ -1383,6 +1393,12 @@ No markdown formatting or extra text outside the JSON array.`;
             <div className={styles.studioView}>
               <div className={styles.studioTabs}>
                 <button 
+                  className={`${styles.studioTabBtn} ${studioSubTab === "objectives" ? styles.studioTabBtnActive : ""}`}
+                  onClick={() => setStudioSubTab("objectives")}
+                >
+                  🎯 Core Objectives & Guides
+                </button>
+                <button 
                   className={`${styles.studioTabBtn} ${studioSubTab === "guide" ? styles.studioTabBtnActive : ""}`}
                   onClick={() => setStudioSubTab("guide")}
                 >
@@ -1413,7 +1429,92 @@ No markdown formatting or extra text outside the JSON array.`;
               </div>
 
               <div className={`${styles.studioContent} scroll-thin`}>
-                {selectedSources.length === 0 ? (
+                {/* SUBTAB 0: CORE OBJECTIVES & GUIDES */}
+                {studioSubTab === "objectives" && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '10px 0' }}>
+                    <div>
+                      <h3 style={{ fontSize: '18px', fontWeight: 700 }}>🎯 Core Objectives & Completion Guides</h3>
+                      <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                        Course learning goals, exam milestones, and step-by-step guides to assignment completion.
+                      </p>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '16px' }}>
+                      {filteredObjectives.map(obj => {
+                        const completedCount = obj.guides.filter(g => g.completed).length;
+                        const totalCount = obj.guides.length;
+                        const pct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+                        const cls = classes.find(c => c.id === obj.classId);
+
+                        return (
+                          <div key={obj.id} className="glass" style={{ padding: '20px', borderRadius: '16px', borderLeft: `4px solid ${cls?.color || 'var(--accent)'}` }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                              <span style={{ fontSize: '11px', fontWeight: 700, padding: '3px 8px', borderRadius: '6px', background: 'rgba(255,255,255,0.1)', color: 'var(--text-secondary)' }}>
+                                {cls?.name || 'General'}
+                              </span>
+                              <button 
+                                onClick={() => deleteObjective(obj.id)}
+                                style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '14px' }}
+                                title="Delete Objective"
+                              >
+                                🗑️
+                              </button>
+                            </div>
+
+                            <h4 style={{ fontSize: '15px', fontWeight: 700, margin: '6px 0', textDecoration: obj.completed ? 'line-through' : 'none', color: obj.completed ? 'var(--text-secondary)' : 'var(--text-primary)' }}>
+                              {obj.title}
+                            </h4>
+
+                            {obj.description && (
+                              <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '14px', lineHeight: 1.4 }}>
+                                {obj.description}
+                              </p>
+                            )}
+
+                            {/* Progress bar */}
+                            <div style={{ marginBottom: '14px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '6px', fontWeight: 600 }}>
+                                <span>Completion Guide</span>
+                                <span>{pct}% ({completedCount}/{totalCount} steps)</span>
+                              </div>
+                              <div style={{ width: '100%', height: '6px', background: 'rgba(255,255,255,0.1)', borderRadius: '3px', overflow: 'hidden' }}>
+                                <div style={{ width: `${pct}%`, height: '100%', background: 'var(--accent)', transition: 'width 0.3s' }} />
+                              </div>
+                            </div>
+
+                            {/* Guide steps */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '10px' }}>
+                              <div style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
+                                Actionable Completion Checklist
+                              </div>
+                              {obj.guides.map(g => (
+                                <label key={g.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', fontSize: '12px', cursor: 'pointer', color: g.completed ? 'var(--text-secondary)' : 'var(--text-primary)' }}>
+                                  <input 
+                                    type="checkbox"
+                                    checked={g.completed}
+                                    onChange={() => toggleObjectiveStep(obj.id, g.id)}
+                                    style={{ marginTop: '2px', accentColor: 'var(--accent)' }}
+                                  />
+                                  <span style={{ textDecoration: g.completed ? 'line-through' : 'none', lineHeight: 1.4 }}>
+                                    {g.title}
+                                  </span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {filteredObjectives.length === 0 && (
+                      <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
+                        No core objectives found. Use the sidebar "+ Add Objective" or import a syllabus to auto-generate guides!
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {selectedSources.length === 0 && studioSubTab !== "objectives" ? (
                   <div className={styles.noSelectionState}>
                     <span>📚</span>
                     <p>Select sources on the left to compile study tools.</p>

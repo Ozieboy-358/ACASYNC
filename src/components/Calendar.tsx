@@ -7,9 +7,12 @@ import Modal from "./Modal";
 import styles from "./Calendar.module.css";
 
 export default function Calendar() {
-  const { events, addEvent, updateEvent, deleteEvent, classes } = useAcademic();
+  const { events, addEvent, updateEvent, deleteEvent, classes, objectives, toggleObjectiveStep } = useAcademic();
   const [viewMode, setViewMode] = useState<'month' | 'week' | 'agenda'>('month');
   
+  const [selectedClassFilter, setSelectedClassFilter] = useState<string>("all");
+  const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>("all");
+
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [viewDate, setViewDate] = useState(new Date());
@@ -49,6 +52,13 @@ export default function Calendar() {
   const currentMonth = viewDate.toLocaleString('default', { month: 'long' });
   const currentYear = viewDate.getFullYear();
 
+  // Filter events by class and type
+  const filteredEvents = events.filter(e => {
+    if (selectedClassFilter !== "all" && e.classId !== selectedClassFilter) return false;
+    if (selectedTypeFilter !== "all" && e.type !== selectedTypeFilter) return false;
+    return true;
+  });
+
   const getDaysInMonth = (year: number, month: number) => {
     return new Date(year, month + 1, 0).getDate();
   };
@@ -66,7 +76,7 @@ export default function Calendar() {
 
   const getWeekDays = (date: Date) => {
     const current = new Date(date);
-    const day = current.getDay(); // 0 (Sun) to 6 (Sat)
+    const day = current.getDay();
     const sunday = new Date(current);
     sunday.setDate(current.getDate() - day);
     
@@ -109,6 +119,21 @@ export default function Calendar() {
     setIsEditModalOpen(true);
   };
 
+  const resetForm = () => {
+    setEventTitle("");
+    setEventClassId("");
+    setEventType('assignment');
+    setMaterialUrl("");
+    setScore("");
+    setTotalScore("");
+    setWeight("");
+    setStartTime("");
+    setEndTime("");
+    setEventDescription("");
+    setIsRecurring(false);
+    setAutoStudyPlan(false);
+  };
+
   const handleAddEvent = (e: React.FormEvent) => {
     e.preventDefault();
     if (eventTitle.trim() && eventClassId) {
@@ -141,7 +166,7 @@ export default function Calendar() {
           date: selectedDateStr
         });
 
-        // Auto study generator
+        // Auto study plan generator
         if (autoStudyPlan && (eventType === 'exam' || eventType === 'quiz')) {
           const daysToSchedule = [3, 2, 1];
           daysToSchedule.forEach(daysBefore => {
@@ -152,9 +177,9 @@ export default function Calendar() {
             addEvent({
               title: `Study Session: ${eventTitle}`,
               classId: eventClassId,
-              type: 'material', // Create study material/block
+              type: 'material',
               date: dateStr,
-              startTime: "16:00", // Default study hours
+              startTime: "16:00",
               endTime: "17:00",
               description: `Prepare for upcoming ${eventType}: ${eventTitle}. Review syllabus and class notes.`,
               completed: false
@@ -199,26 +224,13 @@ export default function Calendar() {
     }
   };
 
-  const resetForm = () => {
-    setEventTitle("");
-    setMaterialUrl("");
-    setScore("");
-    setTotalScore("");
-    setWeight("");
-    setStartTime("");
-    setEndTime("");
-    setEventDescription("");
-    setIsRecurring(false);
-    setAutoStudyPlan(false);
-  };
-
   const getEventsForDay = (day: number) => {
     const dateStr = `${viewDate.getFullYear()}-${(viewDate.getMonth() + 1).toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
-    return events.filter(e => e.date === dateStr).sort((a, b) => (a.startTime || "").localeCompare(b.startTime || ""));
+    return filteredEvents.filter(e => e.date === dateStr).sort((a, b) => (a.startTime || "").localeCompare(b.startTime || ""));
   };
 
   const getEventsForDateStr = (dateStr: string) => {
-    return events.filter(e => e.date === dateStr).sort((a, b) => (a.startTime || "").localeCompare(b.startTime || ""));
+    return filteredEvents.filter(e => e.date === dateStr).sort((a, b) => (a.startTime || "").localeCompare(b.startTime || ""));
   };
 
   const changeMonth = (offset: number) => {
@@ -231,7 +243,6 @@ export default function Calendar() {
     setViewDate(newDate);
   };
 
-  // Drag and drop handlers
   const handleDragStart = (e: React.DragEvent, eventId: string) => {
     e.dataTransfer.setData("text/plain", eventId);
   };
@@ -258,6 +269,12 @@ export default function Calendar() {
     }
   };
 
+  // Objective matching selected event
+  const currentEventObjective = selectedEvent 
+    ? objectives.find(o => o.classId === selectedEvent.classId && o.title.toLowerCase().includes(selectedEvent.title.toLowerCase())) ||
+      objectives.find(o => o.classId === selectedEvent.classId)
+    : null;
+
   return (
     <>
       <div className={`${styles.calendarContainer} glass`}>
@@ -268,32 +285,61 @@ export default function Calendar() {
               {currentMonth} <span>{currentYear}</span>
             </h2>
           </div>
-          <div className={styles.controls}>
-            {/* View Switcher */}
-            <div className={styles.viewSwitcher}>
-              <button 
-                className={`${styles.viewTab} ${viewMode === 'month' ? styles.viewTabActive : ""}`}
-                onClick={() => setViewMode('month')}
-              >
-                Month
-              </button>
-              <button 
-                className={`${styles.viewTab} ${viewMode === 'week' ? styles.viewTabActive : ""}`}
-                onClick={() => setViewMode('week')}
-              >
-                Week
-              </button>
-              <button 
-                className={`${styles.viewTab} ${viewMode === 'agenda' ? styles.viewTabActive : ""}`}
-                onClick={() => setViewMode('agenda')}
-              >
-                Agenda
-              </button>
-            </div>
 
-            <div className={styles.navBtns}>
-              <button className={`${styles.navBtn} glass-interactive`} onClick={() => changeMonth(-1)}>&lt;</button>
-              <button className={`${styles.navBtn} glass-interactive`} onClick={() => changeMonth(1)}>&gt;</button>
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            {/* Class filter */}
+            <select 
+              value={selectedClassFilter} 
+              onChange={(e) => setSelectedClassFilter(e.target.value)}
+              className={styles.filterSelect}
+              style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid var(--card-border)', color: 'var(--text-primary)', padding: '6px 12px', borderRadius: '8px', fontSize: '13px' }}
+            >
+              <option value="all">All Classes</option>
+              {classes.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+
+            {/* Type filter */}
+            <select 
+              value={selectedTypeFilter} 
+              onChange={(e) => setSelectedTypeFilter(e.target.value)}
+              className={styles.filterSelect}
+              style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid var(--card-border)', color: 'var(--text-primary)', padding: '6px 12px', borderRadius: '8px', fontSize: '13px' }}
+            >
+              <option value="all">All Types</option>
+              <option value="assignment">Assignments</option>
+              <option value="exam">Exams</option>
+              <option value="quiz">Quizzes</option>
+              <option value="material">Materials</option>
+            </select>
+
+            <div className={styles.controls}>
+              <div className={styles.viewSwitcher}>
+                <button 
+                  className={`${styles.viewTab} ${viewMode === 'month' ? styles.viewTabActive : ""}`}
+                  onClick={() => setViewMode('month')}
+                >
+                  Month
+                </button>
+                <button 
+                  className={`${styles.viewTab} ${viewMode === 'week' ? styles.viewTabActive : ""}`}
+                  onClick={() => setViewMode('week')}
+                >
+                  Week
+                </button>
+                <button 
+                  className={`${styles.viewTab} ${viewMode === 'agenda' ? styles.viewTabActive : ""}`}
+                  onClick={() => setViewMode('agenda')}
+                >
+                  Agenda
+                </button>
+              </div>
+
+              <div className={styles.navBtns}>
+                <button className={`${styles.navBtn} glass-interactive`} onClick={() => changeMonth(-1)}>&lt;</button>
+                <button className={`${styles.navBtn} glass-interactive`} onClick={() => changeMonth(1)}>&gt;</button>
+              </div>
             </div>
           </div>
         </header>
@@ -407,12 +453,11 @@ export default function Calendar() {
 
         {viewMode === 'agenda' && (
           <div className={styles.agendaList}>
-            {events.length === 0 ? (
-              <p className={styles.emptyMsg} style={{ textAlign: 'center', padding: '40px' }}>No events scheduled.</p>
+            {filteredEvents.length === 0 ? (
+              <p className={styles.emptyMsg} style={{ textAlign: 'center', padding: '40px' }}>No assignments or events matching filter.</p>
             ) : (
-              // Group events by date
               Object.entries(
-                events.reduce((acc: { [key: string]: AcademicEvent[] }, event) => {
+                filteredEvents.reduce((acc: { [key: string]: AcademicEvent[] }, event) => {
                   if (!acc[event.date]) acc[event.date] = [];
                   acc[event.date].push(event);
                   return acc;
@@ -448,41 +493,19 @@ export default function Calendar() {
                                 className={styles.agendaClassBadge} 
                                 style={{ backgroundColor: cls?.color || "#8b5cf6" }}
                               >
-                                {cls?.name || "N/A"}
+                                {cls?.name || "General"}
                               </span>
-                              <span className={styles.agendaTypeBadge}>{event.type}</span>
+                              <span className={styles.agendaTypeBadge}>{event.type.toUpperCase()}</span>
                               {event.startTime && (
                                 <span className={styles.agendaTime}>
-                                  🕒 {event.startTime} {event.endTime ? ` - ${event.endTime}` : ''}
+                                  {event.startTime} {event.endTime ? `- ${event.endTime}` : ""}
                                 </span>
                               )}
                             </div>
-                            <div 
-                              className={styles.agendaTitle}
-                              style={{ textDecoration: event.completed ? 'line-through' : 'none', opacity: event.completed ? 0.6 : 1 }}
-                            >
+                            <h4 className={styles.agendaTitle} style={{ textDecoration: event.completed ? 'line-through' : 'none' }}>
                               {event.title}
-                            </div>
-                            {event.description && <div className={styles.agendaDesc}>{event.description}</div>}
-                          </div>
-                          <div className={styles.agendaRight}>
-                            {event.score !== undefined && (
-                              <span style={{ fontSize: '13px', fontWeight: 600 }}>
-                                Grade: {event.score}/{event.totalScore} ({event.weight}%)
-                              </span>
-                            )}
-                            {event.materialUrl && (
-                              <a 
-                                href={event.materialUrl} 
-                                target="_blank" 
-                                rel="noreferrer" 
-                                className="btn-primary"
-                                style={{ fontSize: '11px', padding: '6px 12px' }}
-                                onClick={e => e.stopPropagation()}
-                              >
-                                Open PDF
-                              </a>
-                            )}
+                            </h4>
+                            {event.description && <p className={styles.agendaDesc}>{event.description}</p>}
                           </div>
                         </div>
                       );
@@ -497,8 +520,11 @@ export default function Calendar() {
       {/* Add Event Modal */}
       <Modal 
         isOpen={isEventModalOpen} 
-        onClose={() => setIsEventModalOpen(false)} 
-        title={`Add Event for ${selectedDateStr}`}
+        onClose={() => {
+          setIsEventModalOpen(false);
+          resetForm();
+        }} 
+        title={`Add Assignment / Event for ${selectedDateStr}`}
       >
         <form onSubmit={handleAddEvent} className={styles.form}>
           <div className={styles.formGroup}>
@@ -507,27 +533,39 @@ export default function Calendar() {
               type="text" 
               value={eventTitle} 
               onChange={(e) => setEventTitle(e.target.value)}
-              placeholder="e.g. Chemistry Midterm, Reading assignment, etc."
+              placeholder="e.g. Homework 1 - Kinematics"
               className={styles.input}
               required
               autoFocus
             />
           </div>
+          
           <div className={styles.row}>
             <div className={styles.formGroup}>
               <label>Class</label>
-              <select value={eventClassId} onChange={(e) => setEventClassId(e.target.value)} className={styles.select} required>
-                <option value="">Select Class</option>
-                {classes.map(cls => <option key={cls.id} value={cls.id}>{cls.name}</option>)}
+              <select 
+                value={eventClassId} 
+                onChange={(e) => setEventClassId(e.target.value)}
+                className={styles.input}
+                required
+              >
+                <option value="" disabled>Select Class</option>
+                {classes.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
               </select>
             </div>
             <div className={styles.formGroup}>
               <label>Type</label>
-              <select value={eventType} onChange={(e) => setEventType(e.target.value as any)} className={styles.select}>
+              <select 
+                value={eventType} 
+                onChange={(e) => setEventType(e.target.value as any)}
+                className={styles.input}
+              >
                 <option value="assignment">Assignment</option>
                 <option value="exam">Exam</option>
                 <option value="quiz">Quiz</option>
-                <option value="material">Material</option>
+                <option value="material">Material / Note</option>
               </select>
             </div>
           </div>
@@ -535,189 +573,272 @@ export default function Calendar() {
           <div className={styles.row}>
             <div className={styles.formGroup}>
               <label>Start Time (Optional)</label>
-              <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className={styles.input} />
+              <input 
+                type="time" 
+                value={startTime} 
+                onChange={(e) => setStartTime(e.target.value)}
+                className={styles.input}
+              />
             </div>
             <div className={styles.formGroup}>
               <label>End Time (Optional)</label>
-              <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className={styles.input} />
+              <input 
+                type="time" 
+                value={endTime} 
+                onChange={(e) => setEndTime(e.target.value)}
+                className={styles.input}
+              />
             </div>
-          </div>
-
-          <div className={styles.formGroup}>
-            <label>Description</label>
-            <textarea 
-              value={eventDescription} 
-              onChange={(e) => setEventDescription(e.target.value)}
-              placeholder="Add study goals, syllabus topics, or general reminders..."
-              className={styles.input}
-              rows={2}
-              style={{ resize: 'none', fontFamily: 'inherit' }}
-            />
           </div>
 
           {eventType === 'material' ? (
             <div className={styles.formGroup}>
-              <label>Link (Google Drive/PDF)</label>
+              <label>Material / Document Link</label>
               <input 
                 type="url" 
                 value={materialUrl} 
                 onChange={(e) => setMaterialUrl(e.target.value)}
-                placeholder="https://..."
+                placeholder="https://... PDF or D2L link"
                 className={styles.input}
               />
             </div>
           ) : (
             <div className={styles.row}>
               <div className={styles.formGroup}>
-                <label>Score</label>
-                <input type="number" step="any" value={score} onChange={(e) => setScore(e.target.value)} placeholder="0" className={styles.input} />
+                <label>Weight (% of grade)</label>
+                <input 
+                  type="number" 
+                  value={weight} 
+                  onChange={(e) => setWeight(e.target.value)}
+                  placeholder="e.g. 10"
+                  className={styles.input}
+                />
               </div>
               <div className={styles.formGroup}>
-                <label>Total</label>
-                <input type="number" step="any" value={totalScore} onChange={(e) => setTotalScore(e.target.value)} placeholder="100" className={styles.input} />
+                <label>Score (Received)</label>
+                <input 
+                  type="number" 
+                  value={score} 
+                  onChange={(e) => setScore(e.target.value)}
+                  placeholder="e.g. 95"
+                  className={styles.input}
+                />
               </div>
               <div className={styles.formGroup}>
-                <label>Weight %</label>
-                <input type="number" step="any" value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="10" className={styles.input} />
+                <label>Total Score</label>
+                <input 
+                  type="number" 
+                  value={totalScore} 
+                  onChange={(e) => setTotalScore(e.target.value)}
+                  placeholder="e.g. 100"
+                  className={styles.input}
+                />
               </div>
             </div>
           )}
 
-          <div className={styles.checkboxGroup}>
-            <input 
-              type="checkbox" 
-              id="recurring" 
-              checked={isRecurring} 
-              onChange={(e) => setIsRecurring(e.target.checked)} 
+          <div className={styles.formGroup}>
+            <label>Description / D2L Notes</label>
+            <textarea 
+              value={eventDescription} 
+              onChange={(e) => setEventDescription(e.target.value)}
+              placeholder="Add details, instructions, or assignment guidelines..."
+              className={styles.input}
+              style={{ minHeight: '80px', resize: 'vertical' }}
             />
-            <label htmlFor="recurring">Repeat weekly for 12 weeks</label>
           </div>
 
-          {(eventType === 'exam' || eventType === 'quiz') && (
-            <div className={styles.checkboxGroup} style={{ borderTop: '1px solid var(--card-border)', paddingTop: '12px' }}>
+          <div style={{ display: 'flex', gap: '20px' }}>
+            <label className={styles.checkboxLabel} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
               <input 
                 type="checkbox" 
-                id="autoStudy" 
-                checked={autoStudyPlan} 
-                onChange={(e) => setAutoStudyPlan(e.target.checked)} 
+                checked={isRecurring} 
+                onChange={(e) => setIsRecurring(e.target.checked)} 
               />
-              <label htmlFor="autoStudy" style={{ fontWeight: 600, color: 'var(--accent)' }}>
-                ✨ Auto-schedule 1-hour study sessions (1, 2, and 3 days before)
-              </label>
-            </div>
-          )}
+              Repeat weekly (12 weeks)
+            </label>
 
-          <button type="submit" className="btn-primary" disabled={!eventClassId}>
-            Create Event
-          </button>
+            {(eventType === 'exam' || eventType === 'quiz') && (
+              <label className={styles.checkboxLabel} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: 'var(--accent)' }}>
+                <input 
+                  type="checkbox" 
+                  checked={autoStudyPlan} 
+                  onChange={(e) => setAutoStudyPlan(e.target.checked)} 
+                />
+                Auto-generate study sessions
+              </label>
+            )}
+          </div>
+
+          <button type="submit" className="btn-primary" style={{ marginTop: '10px' }}>Create Assignment</button>
         </form>
       </Modal>
 
-      {/* Edit/View Event Modal */}
+      {/* Edit Event & Completion Guide Modal */}
       <Modal 
         isOpen={isEditModalOpen} 
-        onClose={() => setIsEditModalOpen(false)} 
-        title="Edit Event Details"
+        onClose={() => {
+          setIsEditModalOpen(false);
+          setSelectedEvent(null);
+        }} 
+        title="Assignment Details & Completion Guide"
       >
-        <form onSubmit={handleSaveEdit} className={styles.form}>
-          <div className={styles.formGroup}>
-            <label>Title</label>
-            <input 
-              type="text" 
-              value={editTitle} 
-              onChange={(e) => setEditTitle(e.target.value)}
-              className={styles.input}
-              required
-            />
-          </div>
-          <div className={styles.row}>
+        {selectedEvent && (
+          <form onSubmit={handleSaveEdit} className={styles.form}>
             <div className={styles.formGroup}>
-              <label>Class</label>
-              <select value={editClassId} onChange={(e) => setEditClassId(e.target.value)} className={styles.select} required>
-                {classes.map(cls => <option key={cls.id} value={cls.id}>{cls.name}</option>)}
-              </select>
-            </div>
-            <div className={styles.formGroup}>
-              <label>Type</label>
-              <select value={editType} onChange={(e) => setEditType(e.target.value as any)} className={styles.select}>
-                <option value="assignment">Assignment</option>
-                <option value="exam">Exam</option>
-                <option value="quiz">Quiz</option>
-                <option value="material">Material</option>
-              </select>
-            </div>
-          </div>
-
-          <div className={styles.row}>
-            <div className={styles.formGroup}>
-              <label>Start Time</label>
-              <input type="time" value={editStartTime} onChange={(e) => setEditStartTime(e.target.value)} className={styles.input} />
-            </div>
-            <div className={styles.formGroup}>
-              <label>End Time</label>
-              <input type="time" value={editEndTime} onChange={(e) => setEditEndTime(e.target.value)} className={styles.input} />
-            </div>
-          </div>
-
-          <div className={styles.formGroup}>
-            <label>Description</label>
-            <textarea 
-              value={editDescription} 
-              onChange={(e) => setEditDescription(e.target.value)}
-              className={styles.input}
-              rows={2}
-              style={{ resize: 'none', fontFamily: 'inherit' }}
-            />
-          </div>
-
-          {editType === 'material' ? (
-            <div className={styles.formGroup}>
-              <label>Link (Google Drive/PDF)</label>
+              <label>Title</label>
               <input 
-                type="url" 
-                value={editMaterialUrl} 
-                onChange={(e) => setEditMaterialUrl(e.target.value)}
+                type="text" 
+                value={editTitle} 
+                onChange={(e) => setEditTitle(e.target.value)}
                 className={styles.input}
+                required
               />
             </div>
-          ) : (
+
             <div className={styles.row}>
               <div className={styles.formGroup}>
-                <label>Score</label>
-                <input type="number" step="any" value={editScore} onChange={(e) => setEditScore(e.target.value)} className={styles.input} />
+                <label>Class</label>
+                <select 
+                  value={editClassId} 
+                  onChange={(e) => setEditClassId(e.target.value)}
+                  className={styles.input}
+                  required
+                >
+                  {classes.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
               </div>
               <div className={styles.formGroup}>
-                <label>Total</label>
-                <input type="number" step="any" value={editTotalScore} onChange={(e) => setEditTotalScore(e.target.value)} className={styles.input} />
-              </div>
-              <div className={styles.formGroup}>
-                <label>Weight %</label>
-                <input type="number" step="any" value={editWeight} onChange={(e) => setEditWeight(e.target.value)} className={styles.input} />
+                <label>Type</label>
+                <select 
+                  value={editType} 
+                  onChange={(e) => setEditType(e.target.value as any)}
+                  className={styles.input}
+                >
+                  <option value="assignment">Assignment</option>
+                  <option value="exam">Exam</option>
+                  <option value="quiz">Quiz</option>
+                  <option value="material">Material</option>
+                </select>
               </div>
             </div>
-          )}
 
-          <div className={styles.checkboxGroup} style={{ borderTop: '1px solid var(--card-border)', paddingTop: '12px' }}>
-            <input 
-              type="checkbox" 
-              id="completed" 
-              checked={editCompleted} 
-              onChange={(e) => setEditCompleted(e.target.checked)} 
-            />
-            <label htmlFor="completed" style={{ fontWeight: 600 }}>Mark as Completed</label>
-          </div>
+            <div className={styles.row}>
+              <div className={styles.formGroup}>
+                <label>Start Time</label>
+                <input 
+                  type="time" 
+                  value={editStartTime} 
+                  onChange={(e) => setEditStartTime(e.target.value)}
+                  className={styles.input}
+                />
+              </div>
+              <div className={styles.formGroup}>
+                <label>End Time</label>
+                <input 
+                  type="time" 
+                  value={editEndTime} 
+                  onChange={(e) => setEditEndTime(e.target.value)}
+                  className={styles.input}
+                />
+              </div>
+            </div>
 
-          <div className={styles.row}>
-            <button type="button" onClick={handleDelete} className={styles.deleteBtn} style={{ flex: 1 }}>
-              Delete Event
-            </button>
-            <button type="submit" className="btn-primary" style={{ flex: 2 }}>
-              Save Changes
-            </button>
-          </div>
-        </form>
+            {editType !== 'material' && (
+              <div className={styles.row}>
+                <div className={styles.formGroup}>
+                  <label>Weight (%)</label>
+                  <input 
+                    type="number" 
+                    value={editWeight} 
+                    onChange={(e) => setEditWeight(e.target.value)}
+                    className={styles.input}
+                  />
+                </div>
+                <div className={styles.formGroup}>
+                  <label>Score</label>
+                  <input 
+                    type="number" 
+                    value={editScore} 
+                    onChange={(e) => setEditScore(e.target.value)}
+                    className={styles.input}
+                  />
+                </div>
+                <div className={styles.formGroup}>
+                  <label>Total Score</label>
+                  <input 
+                    type="number" 
+                    value={editTotalScore} 
+                    onChange={(e) => setEditTotalScore(e.target.value)}
+                    className={styles.input}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Core Objective & Guide Steps for this assignment */}
+            {currentEventObjective && (
+              <div className="glass" style={{ padding: '14px', borderRadius: '10px', marginTop: '10px', border: '1px solid var(--accent-glow)' }}>
+                <h4 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent)', marginBottom: '6px' }}>
+                  🎯 Core Objective Guide
+                </h4>
+                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                  {currentEventObjective.title}
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {currentEventObjective.guides.map(g => (
+                    <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', cursor: 'pointer' }}>
+                      <input 
+                        type="checkbox"
+                        checked={g.completed}
+                        onChange={() => toggleObjectiveStep(currentEventObjective.id, g.id)}
+                        style={{ accentColor: 'var(--accent)' }}
+                      />
+                      <span style={{ textDecoration: g.completed ? 'line-through' : 'none', color: g.completed ? 'var(--text-secondary)' : 'var(--text-primary)' }}>
+                        {g.title}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className={styles.formGroup} style={{ marginTop: '10px' }}>
+              <label>Description / D2L Notes</label>
+              <textarea 
+                value={editDescription} 
+                onChange={(e) => setEditDescription(e.target.value)}
+                className={styles.input}
+                style={{ minHeight: '70px', resize: 'vertical' }}
+              />
+            </div>
+
+            <label className={styles.checkboxLabel} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
+              <input 
+                type="checkbox" 
+                checked={editCompleted} 
+                onChange={(e) => setEditCompleted(e.target.checked)} 
+              />
+              Mark as Completed
+            </label>
+
+            <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
+              <button 
+                type="button" 
+                onClick={handleDelete}
+                style={{ flex: 1, background: 'rgba(239, 68, 68, 0.2)', border: '1px solid #ef4444', color: '#ef4444', padding: '10px', borderRadius: '10px', cursor: 'pointer', fontWeight: 600 }}
+              >
+                Delete Task
+              </button>
+              <button type="submit" className="btn-primary" style={{ flex: 2 }}>
+                Save Changes
+              </button>
+            </div>
+          </form>
+        )}
       </Modal>
     </>
   );
 }
-
