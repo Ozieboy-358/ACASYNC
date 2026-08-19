@@ -20,13 +20,24 @@ export async function GET(request: NextRequest) {
     url = url.replace('webcal://', 'https://');
   }
 
+  // Validate URL structure and protocol
+  try {
+    const parsedUrl = new URL(url);
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+      return NextResponse.json({ error: 'Invalid URL protocol. Only HTTP and HTTPS are allowed.' }, { status: 400 });
+    }
+  } catch {
+    return NextResponse.json({ error: 'Invalid URL format.' }, { status: 400 });
+  }
+
   try {
     const response = await axios.get(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/calendar, text/plain, */*'
       },
-      timeout: 15000
+      timeout: 15000,
+      maxContentLength: 10 * 1024 * 1024 // 10MB limit
     });
 
     const jcalData = ICAL.parse(response.data);
@@ -35,11 +46,16 @@ export async function GET(request: NextRequest) {
     
     const events = vevents.map((vevent: any) => {
       const event = new ICAL.Event(vevent);
-      let eventDate = new Date().toISOString().split('T')[0];
+      const now = new Date();
+      let eventDate = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
       
       try {
         if (event.startDate) {
-          eventDate = event.startDate.toJSDate().toISOString().split('T')[0];
+          const jsDate = event.startDate.toJSDate();
+          const year = jsDate.getFullYear();
+          const month = (jsDate.getMonth() + 1).toString().padStart(2, '0');
+          const day = jsDate.getDate().toString().padStart(2, '0');
+          eventDate = `${year}-${month}-${day}`;
         }
       } catch (e) {
         // Fallback date parsing if ical parser date fails

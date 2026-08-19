@@ -28,6 +28,25 @@ export function getDomainFromUrl(url?: string): string {
 }
 
 /**
+ * Formats a Date object to YYYY-MM-DD string using local calendar year, month, and day
+ * Avoids UTC timezone shift errors caused by toISOString()
+ */
+export function formatLocalDate(date?: Date | null): string {
+  if (!date) return "";
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, "0");
+  const day = date.getDate().toString().padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Returns today's date in local YYYY-MM-DD format
+ */
+export function getTodayDateStr(): string {
+  return formatLocalDate(new Date());
+}
+
+/**
  * Parses a string and converts any detected URLs into clickable anchor elements
  */
 export function renderTextWithLinks(text?: string): React.ReactNode {

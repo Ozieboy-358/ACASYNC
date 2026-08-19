@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Class, AcademicEvent, NotebookSource, Flashcard, CoreObjective, CompletionStep, SavedICalFeed } from './types';
+import { formatLocalDate, getTodayDateStr } from './utils';
 import axios from 'axios';
 
 // Helper to generate realistic default core objectives & guides for classes
@@ -371,7 +372,7 @@ Core Study Areas:
 
 const generateDefaultFlashcards = (classId: string, className: string): Flashcard[] => {
   const name = className.toLowerCase();
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getTodayDateStr();
   if (name.includes('phys')) {
     return [
       {
@@ -505,13 +506,16 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
     const savedTheme = localStorage.getItem('aca_theme') || 'midnight';
     const savedKey = localStorage.getItem('aca_gemini_key') || '';
     
+    let initialClasses: Class[] = [];
     if (savedClasses) {
-      setClasses(JSON.parse(savedClasses));
+      initialClasses = JSON.parse(savedClasses);
+      setClasses(initialClasses);
     } else {
       const defaultClasses: Class[] = [
         { id: "phys-101", name: "Physics 101: Mechanics", color: "#38bdf8", credits: 4, code: "PHYS 101", instructor: "Dr. Henderson" },
         { id: "cs-201", name: "CS 201: Data Structures", color: "#8b5cf6", credits: 4, code: "CS 201", instructor: "Prof. Alan Turing" }
       ];
+      initialClasses = defaultClasses;
       setClasses(defaultClasses);
     }
 
@@ -522,7 +526,7 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
       const formatDay = (offset: number) => {
         const d = new Date(today);
         d.setDate(today.getDate() + offset);
-        return d.toISOString().split('T')[0];
+        return formatLocalDate(d);
       };
 
       const defaultEvents: AcademicEvent[] = [
@@ -586,12 +590,83 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
     if (savedSources) setSources(JSON.parse(savedSources));
     if (savedFlashcards) setFlashcards(JSON.parse(savedFlashcards));
     if (savedObjectives) setObjectives(JSON.parse(savedObjectives));
-    if (savedFeeds) setIcalFeeds(JSON.parse(savedFeeds));
+    
+    // Ensure all feeds and classes with icalUrl are aligned
+    let loadedFeeds: SavedICalFeed[] = savedFeeds ? JSON.parse(savedFeeds) : [];
+    let feedsUpdated = false;
+
+    // Check if any class has icalUrl but is missing from savedFeeds
+    initialClasses.forEach(cls => {
+      if (cls.icalUrl && cls.icalUrl.trim()) {
+        const existing = loadedFeeds.find(f => f.classId === cls.id || f.url === cls.icalUrl);
+        if (!existing) {
+          loadedFeeds.push({
+            id: Math.random().toString(36).substr(2, 9),
+            name: `${cls.name} Feed`,
+            url: cls.icalUrl.trim(),
+            classId: cls.id,
+            autoSync: true
+          });
+          feedsUpdated = true;
+        } else if (!existing.classId) {
+          existing.classId = cls.id;
+          feedsUpdated = true;
+        }
+      }
+    });
+
+    setIcalFeeds(loadedFeeds);
+    if (feedsUpdated) {
+      localStorage.setItem('aca_ical_feeds', JSON.stringify(loadedFeeds));
+    }
+
     if (savedLastSync) setLastGlobalSync(savedLastSync);
     if (savedKey) setGeminiKey(savedKey);
     
     setTheme(savedTheme);
     document.body.setAttribute('data-theme', savedTheme);
+
+    // Initial background auto-sync for saved feeds
+    if (loadedFeeds.length > 0) {
+      setTimeout(() => {
+        loadedFeeds.forEach(feed => {
+          if (feed.autoSync) {
+            axios.get(`/api/d2l?url=${encodeURIComponent(feed.url)}`).then(res => {
+              const fetchedEvents = res.data.events || [];
+              if (fetchedEvents.length > 0) {
+                setEvents(prevEvents => {
+                  const newEvs: AcademicEvent[] = [];
+                  fetchedEvents.forEach((ev: any) => {
+                    const exists = prevEvents.some(e => 
+                      (e.title.toLowerCase() === ev.title.toLowerCase() && e.date === ev.date) ||
+                      (ev.id && e.id === `ev-ical-${ev.id}`)
+                    );
+                    if (!exists) {
+                      newEvs.push({
+                        id: `ev-ical-${ev.id || Math.random().toString(36).substr(2, 9)}`,
+                        title: ev.title,
+                        classId: feed.classId || 'phys-101',
+                        date: ev.date,
+                        type: ev.title.toLowerCase().includes('quiz') ? 'quiz' : (ev.title.toLowerCase().includes('exam') || ev.title.toLowerCase().includes('test')) ? 'exam' : ev.type || 'assignment',
+                        description: ev.description || '',
+                        materialUrl: ev.location || undefined,
+                        weight: 10,
+                        totalScore: 100,
+                        completed: false,
+                        icalFeedId: feed.id
+                      });
+                    }
+                  });
+                  return newEvs.length > 0 ? [...prevEvents, ...newEvs] : prevEvents;
+                });
+              }
+            }).catch(err => {
+              console.error("Auto sync on load failed for feed:", feed.name, err);
+            });
+          }
+        });
+      }, 1000);
+    }
   }, []);
 
   // Sync state to localStorage automatically
@@ -705,7 +780,7 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
 
   const addClass = (cls: Omit<Class, 'id'>): string => {
     const classId = Math.random().toString(36).substr(2, 9);
-    const newClass = { ...cls, id: classId };
+    const newClass: Class = { ...cls, id: classId };
     setClasses(prev => [...prev, newClass]);
     
     // Auto-generate default sources, flashcards & objectives for new classes
@@ -717,6 +792,23 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
 
     const defaultObjs = generateDefaultObjectives(classId, cls.name);
     setObjectives(prev => [...prev, ...defaultObjs]);
+
+    // If icalUrl was provided, create/link SavedICalFeed and sync
+    if (cls.icalUrl && cls.icalUrl.trim()) {
+      const trimmedUrl = cls.icalUrl.trim();
+      const feedId = Math.random().toString(36).substr(2, 9);
+      const newFeed: SavedICalFeed = {
+        id: feedId,
+        name: `${cls.name} Feed`,
+        url: trimmedUrl,
+        classId: classId,
+        autoSync: true
+      };
+      setIcalFeeds(prev => [...prev, newFeed]);
+      setTimeout(() => {
+        syncSingleICalFeed(newFeed).catch(err => console.error("Error initial syncing class feed:", err));
+      }, 50);
+    }
 
     return classId;
   };
@@ -743,6 +835,45 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
 
   const updateClass = (updated: Class) => {
     setClasses(prev => prev.map(c => c.id === updated.id ? updated : c));
+
+    const trimmedUrl = updated.icalUrl?.trim();
+    if (trimmedUrl) {
+      setIcalFeeds(prev => {
+        const existingIdx = prev.findIndex(f => f.classId === updated.id || f.url === trimmedUrl);
+        if (existingIdx >= 0) {
+          const newFeeds = [...prev];
+          const prevFeed = newFeeds[existingIdx];
+          const urlChanged = prevFeed.url !== trimmedUrl;
+          newFeeds[existingIdx] = {
+            ...prevFeed,
+            name: `${updated.name} Feed`,
+            url: trimmedUrl,
+            classId: updated.id
+          };
+          if (urlChanged) {
+            setTimeout(() => {
+              syncSingleICalFeed(newFeeds[existingIdx]).catch(e => console.error(e));
+            }, 50);
+          }
+          return newFeeds;
+        } else {
+          const newFeed: SavedICalFeed = {
+            id: Math.random().toString(36).substr(2, 9),
+            name: `${updated.name} Feed`,
+            url: trimmedUrl,
+            classId: updated.id,
+            autoSync: true
+          };
+          setTimeout(() => {
+            syncSingleICalFeed(newFeed).catch(e => console.error(e));
+          }, 50);
+          return [...prev, newFeed];
+        }
+      });
+    } else {
+      // If icalUrl was removed from class, update linked feeds
+      setIcalFeeds(prev => prev.filter(f => f.classId !== updated.id));
+    }
   };
 
   const deleteClass = (id: string) => {
@@ -751,6 +882,7 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
     setSources(prev => prev.filter(s => s.classId !== id)); 
     setFlashcards(prev => prev.filter(f => f.classId !== id)); 
     setObjectives(prev => prev.filter(o => o.classId !== id));
+    setIcalFeeds(prev => prev.filter(f => f.classId !== id));
   };
 
   const addSource = (source: Omit<NotebookSource, 'id' | 'addedAt'>) => {
@@ -845,19 +977,47 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
     const feedId = Math.random().toString(36).substr(2, 9);
     const newFeed: SavedICalFeed = { ...feed, id: feedId };
     setIcalFeeds(prev => [...prev, newFeed]);
+
+    if (feed.classId && feed.url) {
+      setClasses(clsPrev => clsPrev.map(c => c.id === feed.classId ? { ...c, icalUrl: feed.url } : c));
+    }
+
     return newFeed;
   };
 
   const updateICalFeed = (updated: SavedICalFeed) => {
     setIcalFeeds(prev => prev.map(f => f.id === updated.id ? updated : f));
+    if (updated.classId && updated.url) {
+      setClasses(clsPrev => clsPrev.map(c => c.id === updated.classId ? { ...c, icalUrl: updated.url } : c));
+    }
   };
 
   const deleteICalFeed = (id: string) => {
-    setIcalFeeds(prev => prev.filter(f => f.id !== id));
+    setIcalFeeds(prev => {
+      const targetFeed = prev.find(f => f.id === id);
+      if (targetFeed && targetFeed.classId) {
+        setClasses(clsPrev => clsPrev.map(c => c.id === targetFeed.classId ? { ...c, icalUrl: undefined } : c));
+      }
+      return prev.filter(f => f.id !== id);
+    });
   };
 
   const syncSingleICalFeed = async (feedOrId: string | SavedICalFeed): Promise<{ success: boolean; eventCount: number }> => {
-    const feed = typeof feedOrId === 'string' ? icalFeeds.find(f => f.id === feedOrId) : feedOrId;
+    let feed: SavedICalFeed | undefined;
+    if (typeof feedOrId === 'string') {
+      feed = icalFeeds.find(f => f.id === feedOrId);
+      if (!feed) {
+        try {
+          const raw = localStorage.getItem('aca_ical_feeds');
+          if (raw) {
+            const list: SavedICalFeed[] = JSON.parse(raw);
+            feed = list.find(f => f.id === feedOrId);
+          }
+        } catch {}
+      }
+    } else {
+      feed = feedOrId;
+    }
     if (!feed) return { success: false, eventCount: 0 };
 
     try {
@@ -866,40 +1026,64 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
       
       let targetClassId = feed.classId;
       if (!targetClassId) {
-        let matchingClass = classes.find(c => c.name.toLowerCase() === feed.name.toLowerCase());
+        const matchingClass = classes.find(c => c.name.toLowerCase() === feed!.name.toLowerCase() || (c.icalUrl && c.icalUrl === feed!.url));
         if (!matchingClass) {
-          targetClassId = addClass({ name: feed.name, color: '#ff8c00', credits: 3 });
+          targetClassId = addClass({ name: feed.name, color: '#ff8c00', credits: 3, icalUrl: feed.url });
         } else {
           targetClassId = matchingClass.id;
+          if (matchingClass.icalUrl !== feed.url) {
+            setClasses(prev => prev.map(c => c.id === matchingClass.id ? { ...c, icalUrl: feed!.url } : c));
+          }
         }
+      } else {
+        // Ensure the linked class stores icalUrl
+        setClasses(prev => prev.map(c => c.id === targetClassId ? { ...c, icalUrl: feed!.url } : c));
       }
 
       let addedCount = 0;
-      fetchedEvents.forEach((ev: any) => {
-        const exists = events.some(e => e.title === ev.title && e.date === ev.date);
-        if (!exists) {
-          addEvent({
-            title: ev.title,
-            classId: targetClassId!,
-            date: ev.date,
-            type: ev.title.toLowerCase().includes('quiz') ? 'quiz' : ev.title.toLowerCase().includes('exam') ? 'exam' : 'assignment',
-            description: ev.description || '',
-            materialUrl: ev.location || undefined,
-            weight: 10,
-            totalScore: 100,
-            completed: false,
-            icalFeedId: feed.id
-          });
-          addedCount++;
-        }
+      const newEventsToAdd: AcademicEvent[] = [];
+
+      setEvents(prevEvents => {
+        fetchedEvents.forEach((ev: any) => {
+          const exists = prevEvents.some(e => 
+            (e.title.toLowerCase() === ev.title.toLowerCase() && e.date === ev.date) ||
+            (ev.id && e.id === `ev-ical-${ev.id}`)
+          );
+          if (!exists) {
+            const newEv: AcademicEvent = {
+              id: `ev-ical-${ev.id || Math.random().toString(36).substr(2, 9)}`,
+              title: ev.title,
+              classId: targetClassId!,
+              date: ev.date,
+              type: ev.title.toLowerCase().includes('quiz') ? 'quiz' : (ev.title.toLowerCase().includes('exam') || ev.title.toLowerCase().includes('test') || ev.title.toLowerCase().includes('midterm')) ? 'exam' : ev.type || 'assignment',
+              description: ev.description || '',
+              materialUrl: ev.location || undefined,
+              weight: 10,
+              totalScore: 100,
+              completed: false,
+              icalFeedId: feed!.id
+            };
+            newEventsToAdd.push(newEv);
+            addedCount++;
+          }
+        });
+        return newEventsToAdd.length > 0 ? [...prevEvents, ...newEventsToAdd] : prevEvents;
+      });
+
+      // Synchronize added events to notebook sources
+      newEventsToAdd.forEach(ev => {
+        syncEventToNotebookSource(ev);
       });
 
       const nowStr = new Date().toISOString();
-      updateICalFeed({
+      const updatedFeed: SavedICalFeed = {
         ...feed,
+        classId: targetClassId,
         lastSyncedAt: nowStr,
         eventCount: (feed.eventCount || 0) + addedCount
-      });
+      };
+      
+      setIcalFeeds(prev => prev.map(f => f.id === updatedFeed.id ? updatedFeed : f));
 
       return { success: true, eventCount: fetchedEvents.length };
     } catch (err) {
@@ -930,13 +1114,6 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
     setIsAutoSyncing(false);
     return { success: errors.length === 0, syncedEvents: totalEvents, errors };
   };
-
-  // Auto-sync iCal feeds on initial mount if feeds exist
-  useEffect(() => {
-    if (icalFeeds.length > 0) {
-      syncAllICalFeeds().catch(err => console.error("Auto sync failed on mount", err));
-    }
-  }, []); // Run once on startup
 
   return (
     <AcademicContext.Provider value={{ 

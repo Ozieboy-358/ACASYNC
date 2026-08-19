@@ -6,7 +6,7 @@ import Modal from "./Modal";
 import styles from "./Sidebar.module.css";
 import { syncToGoogle, initGoogleApi } from "@/lib/googleApi";
 import { Class, NotebookSource } from "@/lib/types";
-import { formatUrl, getDomainFromUrl, renderTextWithLinks } from "@/lib/utils";
+import { formatUrl, getDomainFromUrl, renderTextWithLinks, formatLocalDate } from "@/lib/utils";
 import axios from "axios";
 
 export default function Sidebar() {
@@ -66,18 +66,31 @@ export default function Sidebar() {
   const [newClassColor, setNewClassColor] = useState("#8b5cf6");
   const [newNotebookUrl, setNewNotebookUrl] = useState("");
   const [newClassCredits, setNewClassCredits] = useState(3);
+  const [newIcalUrl, setNewIcalUrl] = useState("");
 
   // Class edit form state
   const [editClassName, setEditClassName] = useState("");
   const [editClassColor, setEditClassColor] = useState("#8b5cf6");
   const [editNotebookUrl, setEditNotebookUrl] = useState("");
   const [editClassCredits, setEditClassCredits] = useState(3);
+  const [editIcalUrl, setEditIcalUrl] = useState("");
 
   // D2L / iCal Feed form state
   const [d2lUrl, setD2lUrl] = useState("");
   const [d2lFeedName, setD2lFeedName] = useState("");
   const [d2lClassId, setD2lClassId] = useState("");
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isSyncingClassFeed, setIsSyncingClassFeed] = useState(false);
+
+  // Keep selectedClass synchronized with classes array
+  useEffect(() => {
+    if (selectedClass) {
+      const refreshed = classes.find(c => c.id === selectedClass.id);
+      if (refreshed && (refreshed.name !== selectedClass.name || refreshed.color !== selectedClass.color || refreshed.icalUrl !== selectedClass.icalUrl || refreshed.credits !== selectedClass.credits || refreshed.notebookUrl !== selectedClass.notebookUrl)) {
+        setSelectedClass(refreshed);
+      }
+    }
+  }, [classes, selectedClass]);
 
   // Objective form state inside class view
   const [isAddObjectiveOpen, setIsAddObjectiveOpen] = useState(false);
@@ -100,11 +113,20 @@ export default function Sidebar() {
     setIsSyncing(true);
     try {
       const feedName = d2lFeedName.trim() || "D2L Course Feed";
+      const trimmedUrl = d2lUrl.trim();
       
+      // If class was explicitly chosen, link icalUrl directly to class
+      if (d2lClassId) {
+        const targetCls = classes.find(c => c.id === d2lClassId);
+        if (targetCls) {
+          updateClass({ ...targetCls, icalUrl: trimmedUrl });
+        }
+      }
+
       // Save iCal Feed so it automatically updates & saves import data
       const newFeed = addICalFeed({
         name: feedName,
-        url: d2lUrl.trim(),
+        url: trimmedUrl,
         classId: d2lClassId || undefined,
         autoSync: true,
         lastSyncedAt: new Date().toISOString()
@@ -249,7 +271,7 @@ ${syllabusText}`;
           addEvent({
             classId,
             title: titles[idx],
-            date: date.toISOString().split('T')[0],
+            date: formatLocalDate(date),
             type: types[idx],
             weight: weights[idx],
             totalScore: 100,
@@ -285,13 +307,15 @@ ${syllabusText}`;
     e.preventDefault();
     if (newClassName.trim()) {
       addClass({ 
-        name: newClassName, 
+        name: newClassName.trim(), 
         color: newClassColor,
-        notebookUrl: newNotebookUrl,
-        credits: newClassCredits 
+        notebookUrl: newNotebookUrl.trim() || undefined,
+        credits: newClassCredits,
+        icalUrl: newIcalUrl.trim() || undefined
       });
       setNewClassName("");
       setNewNotebookUrl("");
+      setNewIcalUrl("");
       setNewClassCredits(3);
       setIsClassModalOpen(false);
     }
@@ -300,12 +324,13 @@ ${syllabusText}`;
   const handleEditClass = (e: React.FormEvent) => {
     e.preventDefault();
     if (selectedClass && editClassName.trim()) {
-      const updatedClass = {
-        id: selectedClass.id,
-        name: editClassName,
+      const updatedClass: Class = {
+        ...selectedClass,
+        name: editClassName.trim(),
         color: editClassColor,
-        notebookUrl: editNotebookUrl,
-        credits: editClassCredits
+        notebookUrl: editNotebookUrl.trim() || undefined,
+        credits: editClassCredits,
+        icalUrl: editIcalUrl.trim() || undefined
       };
       updateClass(updatedClass);
       setSelectedClass(updatedClass);
@@ -461,6 +486,7 @@ ${syllabusText}`;
                     setEditClassColor(selectedClass.color);
                     setEditNotebookUrl(selectedClass.notebookUrl || "");
                     setEditClassCredits(selectedClass.credits || 3);
+                    setEditIcalUrl(selectedClass.icalUrl || "");
                     setIsEditClassModalOpen(true);
                   }}
                 >
@@ -480,6 +506,68 @@ ${syllabusText}`;
                 </button>
               </div>
             </header>
+
+            {/* iCal Feed Status Banner */}
+            <div className="glass" style={{ padding: '10px 14px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', overflow: 'hidden' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '12px' }}>{selectedClass.icalUrl ? '📡' : '🔗'}</span>
+                  <span style={{ fontSize: '12px', fontWeight: 600, color: selectedClass.icalUrl ? '#38bdf8' : 'var(--text-secondary)' }}>
+                    {selectedClass.icalUrl ? 'iCal Auto-Sync Feed' : 'No iCal Feed Connected'}
+                  </span>
+                </div>
+                {selectedClass.icalUrl ? (
+                  <span style={{ fontSize: '10px', color: 'var(--text-secondary)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '170px' }} title={selectedClass.icalUrl}>
+                    {getDomainFromUrl(selectedClass.icalUrl)} • {icalFeeds.find(f => f.classId === selectedClass.id || f.url === selectedClass.icalUrl)?.lastSyncedAt ? `Synced ${new Date(icalFeeds.find(f => f.classId === selectedClass.id || f.url === selectedClass.icalUrl)!.lastSyncedAt!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Ready to sync'}
+                  </span>
+                ) : (
+                  <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
+                    Connect D2L / Canvas feed to auto-sync tasks
+                  </span>
+                )}
+              </div>
+              {selectedClass.icalUrl ? (
+                <button
+                  onClick={async () => {
+                    const feed = icalFeeds.find(f => f.classId === selectedClass.id || f.url === selectedClass.icalUrl);
+                    setIsSyncingClassFeed(true);
+                    if (feed) {
+                      const res = await syncSingleICalFeed(feed);
+                      setIsSyncingClassFeed(false);
+                      alert(res.success ? `Synced ${res.eventCount} assignments for ${selectedClass.name}!` : "Failed to sync feed. Please check URL.");
+                    } else {
+                      const newFeed = addICalFeed({
+                        name: `${selectedClass.name} Feed`,
+                        url: selectedClass.icalUrl!,
+                        classId: selectedClass.id,
+                        autoSync: true
+                      });
+                      const res = await syncSingleICalFeed(newFeed);
+                      setIsSyncingClassFeed(false);
+                      alert(res.success ? `Synced ${res.eventCount} assignments for ${selectedClass.name}!` : "Failed to sync feed.");
+                    }
+                  }}
+                  disabled={isSyncingClassFeed}
+                  style={{ background: 'rgba(56, 189, 248, 0.15)', border: '1px solid rgba(56, 189, 248, 0.3)', color: '#38bdf8', padding: '5px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                >
+                  {isSyncingClassFeed ? 'Syncing...' : '🔄 Sync'}
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    setEditClassName(selectedClass.name);
+                    setEditClassColor(selectedClass.color);
+                    setEditNotebookUrl(selectedClass.notebookUrl || "");
+                    setEditClassCredits(selectedClass.credits || 3);
+                    setEditIcalUrl(selectedClass.icalUrl || "");
+                    setIsEditClassModalOpen(true);
+                  }}
+                  style={{ background: 'rgba(255, 255, 255, 0.08)', border: '1px solid var(--card-border)', color: 'var(--text-primary)', padding: '5px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                >
+                  + Connect
+                </button>
+              )}
+            </div>
 
             <div className={styles.tabs} style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px' }}>
               <button 
@@ -1141,30 +1229,43 @@ ${syllabusText}`;
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '250px', overflowY: 'auto' }}>
-            {icalFeeds.map(feed => (
-              <div key={feed.id} className="glass" style={{ padding: '12px', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <h4 style={{ fontSize: '14px', fontWeight: 600 }}>{feed.name}</h4>
-                  <p style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                    {feed.lastSyncedAt ? `Last synced: ${new Date(feed.lastSyncedAt).toLocaleString()}` : 'Not synced yet'}
-                  </p>
+            {icalFeeds.map(feed => {
+              const linkedClass = classes.find(c => c.id === feed.classId || (c.icalUrl && c.icalUrl === feed.url));
+              return (
+                <div key={feed.id} className="glass" style={{ padding: '12px', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <h4 style={{ fontSize: '14px', fontWeight: 600 }}>{feed.name}</h4>
+                    {linkedClass ? (
+                      <p style={{ fontSize: '11px', color: linkedClass.color, marginTop: '2px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <span style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: linkedClass.color }}></span>
+                        Class: <strong>{linkedClass.name}</strong>
+                      </p>
+                    ) : (
+                      <p style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                        No class linked
+                      </p>
+                    )}
+                    <p style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                      {feed.lastSyncedAt ? `Last synced: ${new Date(feed.lastSyncedAt).toLocaleString()}` : 'Not synced yet'}
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button 
+                      onClick={() => syncSingleICalFeed(feed.id)}
+                      style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: 'var(--text-primary)', padding: '6px 10px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}
+                    >
+                      Sync
+                    </button>
+                    <button 
+                      onClick={() => deleteICalFeed(feed.id)}
+                      style={{ background: 'rgba(239,68,68,0.15)', border: 'none', color: '#ef4444', padding: '6px 10px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
-                <div style={{ display: 'flex', gap: '6px' }}>
-                  <button 
-                    onClick={() => syncSingleICalFeed(feed.id)}
-                    style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: 'var(--text-primary)', padding: '6px 10px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}
-                  >
-                    Sync
-                  </button>
-                  <button 
-                    onClick={() => deleteICalFeed(feed.id)}
-                    style={{ background: 'rgba(239,68,68,0.15)', border: 'none', color: '#ef4444', padding: '6px 10px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
 
             {icalFeeds.length === 0 && (
               <p className={styles.emptyMsg}>No saved iCal feeds yet. Click "Import D2L / iCal Feed" to add one.</p>
@@ -1213,6 +1314,16 @@ ${syllabusText}`;
                 className={styles.colorInput}
               />
             </div>
+          </div>
+          <div className={styles.formGroup}>
+            <label>iCal / D2L Feed URL (Optional)</label>
+            <input 
+              type="url" 
+              value={newIcalUrl} 
+              onChange={(e) => setNewIcalUrl(e.target.value)}
+              placeholder="webcal://... or https://.../feed.ics"
+              className={styles.input}
+            />
           </div>
           <div className={styles.formGroup}>
             <label>NotebookLM URL (Optional)</label>
@@ -1267,6 +1378,16 @@ ${syllabusText}`;
                 className={styles.colorInput}
               />
             </div>
+          </div>
+          <div className={styles.formGroup}>
+            <label>iCal / D2L Feed URL (Optional)</label>
+            <input 
+              type="url" 
+              value={editIcalUrl} 
+              onChange={(e) => setEditIcalUrl(e.target.value)}
+              placeholder="webcal://... or https://.../feed.ics"
+              className={styles.input}
+            />
           </div>
           <div className={styles.formGroup}>
             <label>NotebookLM URL (Optional)</label>

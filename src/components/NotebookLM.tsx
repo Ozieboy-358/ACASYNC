@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useAcademic } from "@/lib/context";
-import { Class, NotebookSource } from "@/lib/types";
+import { Class, NotebookSource, Flashcard } from "@/lib/types";
+import { formatLocalDate, getTodayDateStr } from "@/lib/utils";
 import Modal from "./Modal";
 import styles from "./NotebookLM.module.css";
 
@@ -93,6 +94,7 @@ export default function NotebookLM() {
   const [newCardQ, setNewCardQ] = useState("");
   const [newCardA, setNewCardA] = useState("");
   const [isGeneratingFC, setIsGeneratingFC] = useState(false);
+  const [studyQueue, setStudyQueue] = useState<Flashcard[]>([]);
 
   // Scrolling refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -106,12 +108,16 @@ export default function NotebookLM() {
   useEffect(() => {
     if (typeof window !== "undefined") {
       const savedClassId = localStorage.getItem("aca_notebook_class_id") || "all";
-      setSelectedClassId(savedClassId);
+      if (savedClassId === "all" || classes.some(c => c.id === savedClassId)) {
+        setSelectedClassId(savedClassId);
+      } else {
+        setSelectedClassId("all");
+      }
       
       const savedKey = localStorage.getItem("aca_gemini_key") || "";
       setTempKeyInput(savedKey);
     }
-  }, []);
+  }, [classes]);
 
   // Filter sources based on selected class
   const filteredSources = useMemo(() => {
@@ -751,20 +757,35 @@ Do not invent facts. If the answer is not in the sources, say: "I cannot find a 
   // -------------------------------------------------------------
   // FLASHCARDS GENERATION & SM-2 SPACED REPETITION STUDY
   // -------------------------------------------------------------
+  const todayStr = getTodayDateStr();
+
   const dueFlashcards = useMemo(() => {
-    const todayStr = new Date().toISOString().split('T')[0];
     return flashcards.filter(f => {
       const matchesCourse = selectedClassId === "all" || f.classId === selectedClassId;
       const isDue = f.nextReviewDate <= todayStr;
       return matchesCourse && isDue;
     });
-  }, [flashcards, selectedClassId]);
+  }, [flashcards, selectedClassId, todayStr]);
 
   const courseFlashcards = useMemo(() => {
     return flashcards.filter(f => selectedClassId === "all" || f.classId === selectedClassId);
   }, [flashcards, selectedClassId]);
 
-  const handleRateCard = (card: any, score: number) => {
+  // Sync study queue when changing course or when starting fresh
+  useEffect(() => {
+    setStudyQueue(dueFlashcards);
+    setCurrentCardIdx(0);
+    setIsCardFlipped(false);
+  }, [selectedClassId]);
+
+  const handleStartReview = () => {
+    const queue = dueFlashcards.length > 0 ? dueFlashcards : courseFlashcards;
+    setStudyQueue(queue);
+    setCurrentCardIdx(0);
+    setIsCardFlipped(false);
+  };
+
+  const handleRateCard = (card: Flashcard, score: number) => {
     let repetitions = card.repetitions;
     let easeFactor = card.easeFactor;
     let interval = card.interval;
@@ -789,7 +810,7 @@ Do not invent facts. If the answer is not in the sources, say: "I cannot find a 
 
     const nextDate = new Date();
     nextDate.setDate(nextDate.getDate() + interval);
-    const nextReviewDate = nextDate.toISOString().split('T')[0];
+    const nextReviewDate = formatLocalDate(nextDate);
 
     updateFlashcard({
       ...card,
@@ -804,7 +825,6 @@ Do not invent facts. If the answer is not in the sources, say: "I cannot find a 
   };
 
   const generateOfflineFlashcards = () => {
-    const todayStr = new Date().toISOString().split('T')[0];
     const generated: Array<{question: string, answer: string}> = [];
     
     selectedSources.forEach(source => {
@@ -886,7 +906,6 @@ Do not include any markdown syntax, explanation, or code blocks outside the JSON
         const cleanJson = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
         
         const cardsList = JSON.parse(cleanJson);
-        const todayStr = new Date().toISOString().split('T')[0];
         
         cardsList.forEach((c: { question: string, answer: string }) => {
           addFlashcard({
@@ -921,7 +940,6 @@ Do not include any markdown syntax, explanation, or code blocks outside the JSON
       alert("Please select a specific course on the left to add a flashcard.");
       return;
     }
-    const todayStr = new Date().toISOString().split('T')[0];
     addFlashcard({
       classId: selectedClassId,
       question: newCardQ.trim(),
@@ -1693,26 +1711,35 @@ No markdown formatting or extra text outside the JSON array.`;
                         {/* MODE 1: STUDY DUE CARDS */}
                         {fcStudyMode === "review" && (
                           <>
-                            {dueFlashcards.length === 0 ? (
+                            {studyQueue.length === 0 ? (
                               <div className={styles.noSelectionState} style={{ padding: '40px 0' }}>
                                 <span>🎉</span>
                                 <h3>All caught up!</h3>
                                 <p>You have no cards due for review in this course.</p>
-                                <button 
-                                  className="btn-primary" 
-                                  onClick={generateFlashcardsWithGemini}
-                                  disabled={isGeneratingFC || selectedSources.length === 0}
-                                  style={{ marginTop: '15px' }}
-                                >
-                                  {isGeneratingFC ? "Generating..." : "Generate AI Flashcards from Sources"}
-                                </button>
+                                <div style={{ display: 'flex', gap: '10px', marginTop: '15px', justifyContent: 'center' }}>
+                                  {courseFlashcards.length > 0 && (
+                                    <button 
+                                      className="btn-primary" 
+                                      onClick={handleStartReview}
+                                    >
+                                      Review All Deck Cards ({courseFlashcards.length})
+                                    </button>
+                                  )}
+                                  <button 
+                                    className="btn-primary" 
+                                    onClick={generateFlashcardsWithGemini}
+                                    disabled={isGeneratingFC || selectedSources.length === 0}
+                                  >
+                                    {isGeneratingFC ? "Generating..." : "Generate AI Flashcards"}
+                                  </button>
+                                </div>
                               </div>
-                            ) : currentCardIdx >= dueFlashcards.length ? (
+                            ) : currentCardIdx >= studyQueue.length ? (
                               <div className={styles.noSelectionState} style={{ padding: '40px 0' }}>
                                 <span>🏆</span>
                                 <h3>Session Complete!</h3>
-                                <p>You reviewed {dueFlashcards.length} cards in this session.</p>
-                                <button className="btn-primary" style={{ marginTop: '15px' }} onClick={() => setCurrentCardIdx(0)}>
+                                <p>You reviewed {studyQueue.length} cards in this session.</p>
+                                <button className="btn-primary" style={{ marginTop: '15px' }} onClick={handleStartReview}>
                                   Review Again
                                 </button>
                               </div>
@@ -1720,7 +1747,7 @@ No markdown formatting or extra text outside the JSON array.`;
                               <>
                                 <div className={styles.statsOverview}>
                                   <div className={styles.statItem}>
-                                    <div className={styles.statNum}>{dueFlashcards.length - currentCardIdx}</div>
+                                    <div className={styles.statNum}>{studyQueue.length - currentCardIdx}</div>
                                     <div className={styles.statText}>Remaining</div>
                                   </div>
                                   <div className={styles.statItem}>
@@ -1736,8 +1763,8 @@ No markdown formatting or extra text outside the JSON array.`;
                                   <div className={`${styles.cardInner} ${isCardFlipped ? styles.cardFlipped : ""}`}>
                                     {/* Front Side */}
                                     <div className={`${styles.cardFace} ${styles.cardFront}`}>
-                                      <div className={styles.cardLabel}>Question ({currentCardIdx + 1} of {dueFlashcards.length})</div>
-                                      <div className={styles.cardText}>{dueFlashcards[currentCardIdx].question}</div>
+                                      <div className={styles.cardLabel}>Question ({currentCardIdx + 1} of {studyQueue.length})</div>
+                                      <div className={styles.cardText}>{studyQueue[currentCardIdx]?.question}</div>
                                       <div style={{ color: 'var(--text-secondary)', fontSize: '11px', marginTop: '30px' }}>
                                         Click card to reveal answer
                                       </div>
@@ -1746,7 +1773,7 @@ No markdown formatting or extra text outside the JSON array.`;
                                     {/* Back Side */}
                                     <div className={`${styles.cardFace} ${styles.cardBack}`}>
                                       <div className={styles.cardLabel}>Answer</div>
-                                      <div className={styles.cardText}>{dueFlashcards[currentCardIdx].answer}</div>
+                                      <div className={styles.cardText}>{studyQueue[currentCardIdx]?.answer}</div>
                                       <div style={{ color: 'var(--text-secondary)', fontSize: '11px', marginTop: '30px' }}>
                                         Click card to see question again
                                       </div>
@@ -1755,29 +1782,29 @@ No markdown formatting or extra text outside the JSON array.`;
                                 </div>
 
                                 {/* Quality scoring controls */}
-                                {isCardFlipped && (
+                                {isCardFlipped && studyQueue[currentCardIdx] && (
                                   <div className={styles.ratingRow}>
                                     <button 
                                       className={`${styles.ratingBtn} ${styles.againBtn}`}
-                                      onClick={(e) => { e.stopPropagation(); handleRateCard(dueFlashcards[currentCardIdx], 0); }}
+                                      onClick={(e) => { e.stopPropagation(); handleRateCard(studyQueue[currentCardIdx], 0); }}
                                     >
                                       Again (1d)
                                     </button>
                                     <button 
                                       className={`${styles.ratingBtn} ${styles.hardBtn}`}
-                                      onClick={(e) => { e.stopPropagation(); handleRateCard(dueFlashcards[currentCardIdx], 1); }}
+                                      onClick={(e) => { e.stopPropagation(); handleRateCard(studyQueue[currentCardIdx], 1); }}
                                     >
                                       Hard (4d)
                                     </button>
                                     <button 
                                       className={`${styles.ratingBtn} ${styles.goodBtn}`}
-                                      onClick={(e) => { e.stopPropagation(); handleRateCard(dueFlashcards[currentCardIdx], 2); }}
+                                      onClick={(e) => { e.stopPropagation(); handleRateCard(studyQueue[currentCardIdx], 2); }}
                                     >
                                       Good (8d)
                                     </button>
                                     <button 
                                       className={`${styles.ratingBtn} ${styles.easyBtn}`}
-                                      onClick={(e) => { e.stopPropagation(); handleRateCard(dueFlashcards[currentCardIdx], 3); }}
+                                      onClick={(e) => { e.stopPropagation(); handleRateCard(studyQueue[currentCardIdx], 3); }}
                                     >
                                       Easy (16d)
                                     </button>
@@ -1810,7 +1837,6 @@ No markdown formatting or extra text outside the JSON array.`;
                             ) : (
                               <div className={styles.flashcardListGrid}>
                                 {courseFlashcards.map(fc => {
-                                  const todayStr = new Date().toISOString().split('T')[0];
                                   const isDue = fc.nextReviewDate <= todayStr;
                                   return (
                                     <div key={fc.id} className={styles.minCard}>

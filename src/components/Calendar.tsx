@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useAcademic } from "@/lib/context";
 import { AcademicEvent } from "@/lib/types";
-import { formatUrl, getDomainFromUrl, renderTextWithLinks } from "@/lib/utils";
+import { formatUrl, getDomainFromUrl, renderTextWithLinks, formatLocalDate } from "@/lib/utils";
 import Modal from "./Modal";
 import styles from "./Calendar.module.css";
 
@@ -98,7 +98,7 @@ export default function Calendar() {
   };
 
   const handleWeekDayClick = (date: Date) => {
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = formatLocalDate(date);
     setSelectedDateStr(dateStr);
     setIsEventModalOpen(true);
   };
@@ -158,7 +158,7 @@ export default function Calendar() {
           d.setDate(d.getDate() + (i * 7));
           addEvent({
             ...baseEvent,
-            date: d.toISOString().split('T')[0]
+            date: formatLocalDate(d)
           });
         }
       } else {
@@ -173,7 +173,7 @@ export default function Calendar() {
           daysToSchedule.forEach(daysBefore => {
             const examDate = new Date(selectedDateStr + "T12:00:00");
             examDate.setDate(examDate.getDate() - daysBefore);
-            const dateStr = examDate.toISOString().split('T')[0];
+            const dateStr = formatLocalDate(examDate);
 
             addEvent({
               title: `Study Session: ${eventTitle}`,
@@ -395,7 +395,7 @@ export default function Calendar() {
         {viewMode === 'week' && (
           <div className={styles.weekGrid}>
             {getWeekDays(viewDate).map((dateVal, idx) => {
-              const dateStr = dateVal.toISOString().split('T')[0];
+              const dateStr = formatLocalDate(dateVal);
               const weekEvents = getEventsForDateStr(dateStr);
               const today = new Date();
               const isToday = dateVal.getDate() === today.getDate() && 
@@ -569,11 +569,16 @@ export default function Calendar() {
                 className={styles.input}
                 required
               >
-                <option value="" disabled>Select Class</option>
+                <option value="" disabled>{classes.length === 0 ? "No classes found (Add a class first)" : "Select Class"}</option>
                 {classes.map(c => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
+              {classes.length === 0 && (
+                <p style={{ fontSize: '11px', color: '#f87171', marginTop: '4px' }}>
+                  Please add a class in the sidebar before scheduling assignments.
+                </p>
+              )}
             </div>
             <div className={styles.formGroup}>
               <label>Type</label>
