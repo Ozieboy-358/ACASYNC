@@ -35,13 +35,18 @@ export default function Sidebar() {
     setCurrentView,
     theme, 
     setTheme,
-    geminiKey
+    geminiKey,
+    isLoaded,
+    resetToDefaultData,
+    exportBackupData,
+    importBackupData
   } = useAcademic();
 
   const [isClassModalOpen, setIsClassModalOpen] = useState(false);
   const [isEditClassModalOpen, setIsEditClassModalOpen] = useState(false);
   const [isD2LModalOpen, setIsD2LModalOpen] = useState(false);
   const [isFeedsModalOpen, setIsFeedsModalOpen] = useState(false);
+  const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [isSyllabusModalOpen, setIsSyllabusModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [selectedClass, setSelectedClass] = useState<Class | null>(null);
@@ -956,7 +961,17 @@ ${syllabusText}`;
                       </button>
                     ))}
                     {classes.length === 0 && (
-                      <p className={styles.emptyMsg}>No classes added yet.</p>
+                      <div style={{ textAlign: 'center', padding: '12px 4px' }}>
+                        <p className={styles.emptyMsg} style={{ marginBottom: '8px' }}>No classes currently loaded.</p>
+                        <button 
+                          type="button"
+                          className="btn-primary"
+                          onClick={resetToDefaultData}
+                          style={{ fontSize: '11px', padding: '5px 12px', width: '100%', cursor: 'pointer' }}
+                        >
+                          ✨ Restore Demo Classes
+                        </button>
+                      </div>
                     )}
                   </div>
                   <button className={styles.addBtn} onClick={() => setIsClassModalOpen(true)}>
@@ -1017,6 +1032,14 @@ ${syllabusText}`;
                     <circle cx="5" cy="19" r="1" />
                   </svg>
                   Manage iCal Feeds ({icalFeeds.length})
+                </button>
+                <button className={`${styles.syncBtn} glass-interactive`} onClick={() => setIsBackupModalOpen(true)} style={{ marginBottom: '10px' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                    <polyline points="17 21 17 13 7 13 7 21" />
+                    <polyline points="7 3 7 8 15 8" />
+                  </svg>
+                  Data Backup & Restore
                 </button>
                 <button className={`${styles.syncBtn} glass-interactive`} onClick={handleSyncGoogle} style={{ marginBottom: '16px' }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1270,6 +1293,97 @@ ${syllabusText}`;
             {icalFeeds.length === 0 && (
               <p className={styles.emptyMsg}>No saved iCal feeds yet. Click "Import D2L / iCal Feed" to add one.</p>
             )}
+          </div>
+        </div>
+      </Modal>
+
+      {/* Backup & Restore Modal */}
+      <Modal
+        isOpen={isBackupModalOpen}
+        onClose={() => setIsBackupModalOpen(false)}
+        title="Backup & Restore Academic Data"
+      >
+        <div className={styles.form}>
+          <p className={styles.instructionText}>
+            Safeguard your classes, assignments, guides, and study notes as a JSON backup, or restore data anytime.
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div className="glass" style={{ padding: '14px', borderRadius: '10px' }}>
+              <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>📥 Export Full Backup</h4>
+              <p style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '10px' }}>
+                Download a complete .json file containing all {classes.length} classes, {events.length} assignments, and notebook materials.
+              </p>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => {
+                  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(exportBackupData());
+                  const downloadAnchor = document.createElement('a');
+                  downloadAnchor.setAttribute("href", dataStr);
+                  downloadAnchor.setAttribute("download", `acasync-backup-${new Date().toISOString().split('T')[0]}.json`);
+                  document.body.appendChild(downloadAnchor);
+                  downloadAnchor.click();
+                  downloadAnchor.remove();
+                }}
+                style={{ fontSize: '12px', padding: '8px 14px' }}
+              >
+                ⬇️ Download Backup JSON
+              </button>
+            </div>
+
+            <div className="glass" style={{ padding: '14px', borderRadius: '10px' }}>
+              <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>📤 Import Data Backup</h4>
+              <p style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '10px' }}>
+                Upload a previously exported .json file to restore all your academic data.
+              </p>
+              <label className="glass-interactive" style={{ display: 'inline-block', padding: '8px 14px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', border: '1px solid var(--card-border)' }}>
+                📁 Choose Backup File (.json)
+                <input
+                  type="file"
+                  accept=".json"
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                      const text = event.target?.result as string;
+                      if (text) {
+                        const success = importBackupData(text);
+                        if (success) {
+                          alert("Academic data restored successfully!");
+                          setIsBackupModalOpen(false);
+                        } else {
+                          alert("Failed to parse backup file. Please make sure it is a valid AcaSync JSON backup.");
+                        }
+                      }
+                    };
+                    reader.readAsText(file);
+                  }}
+                />
+              </label>
+            </div>
+
+            <div className="glass" style={{ padding: '14px', borderRadius: '10px' }}>
+              <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>🔄 Reset / Restore Sample Demo Classes</h4>
+              <p style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '10px' }}>
+                Reload Physics 101 and CS 201 with full demo syllabi, schedules, guides, and flashcards.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm("Reset to default demo classes? This will replace current coursework with default sample classes.")) {
+                    resetToDefaultData();
+                    setIsBackupModalOpen(false);
+                  }
+                }}
+                className="glass-interactive"
+                style={{ fontSize: '12px', padding: '8px 14px', borderRadius: '8px', border: '1px solid var(--card-border)', color: 'var(--text-primary)' }}
+              >
+                ✨ Reset to Demo Classes
+              </button>
+            </div>
           </div>
         </div>
       </Modal>

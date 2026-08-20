@@ -443,6 +443,7 @@ interface AcademicContextType {
   icalFeeds: SavedICalFeed[];
   lastGlobalSync: string | null;
   isAutoSyncing: boolean;
+  isLoaded: boolean;
 
   addClass: (cls: Omit<Class, 'id'>) => string;
   addEvent: (event: Omit<AcademicEvent, 'id'>) => string;
@@ -470,6 +471,11 @@ interface AcademicContextType {
   syncAllICalFeeds: () => Promise<{ success: boolean; syncedEvents: number; errors: string[] }>;
   syncSingleICalFeed: (feedOrId: string | SavedICalFeed) => Promise<{ success: boolean; eventCount: number }>;
 
+  // Backup & Restore
+  resetToDefaultData: () => void;
+  exportBackupData: () => string;
+  importBackupData: (jsonStr: string) => boolean;
+
   currentView: 'calendar' | 'dashboard' | 'notebook';
   setCurrentView: (view: 'calendar' | 'dashboard' | 'notebook') => void;
   theme: string;
@@ -480,6 +486,77 @@ interface AcademicContextType {
 
 const AcademicContext = createContext<AcademicContextType | undefined>(undefined);
 
+// Helper default data generators
+const getDefaultClasses = (): Class[] => [
+  { id: "phys-101", name: "Physics 101: Mechanics", color: "#38bdf8", credits: 4, code: "PHYS 101", instructor: "Dr. Henderson" },
+  { id: "cs-201", name: "CS 201: Data Structures", color: "#8b5cf6", credits: 4, code: "CS 201", instructor: "Prof. Alan Turing" }
+];
+
+const getDefaultEvents = (): AcademicEvent[] => {
+  const today = new Date();
+  const formatDay = (offset: number) => {
+    const d = new Date(today);
+    d.setDate(today.getDate() + offset);
+    return formatLocalDate(d);
+  };
+
+  return [
+    {
+      id: "ev-1",
+      classId: "phys-101",
+      title: "Homework 1: Kinematics & Vector Math",
+      date: formatDay(2),
+      type: "assignment",
+      weight: 5,
+      totalScore: 100,
+      startTime: "17:00",
+      endTime: "18:00",
+      materialUrl: "https://d2l.university.edu/d2l/lms/dropbox/user/folder_submit.d2l?db=84920",
+      description: "Complete all 6 problems from Chapter 2 in the Physics Workbook. Submit your PDF work on the D2L portal before 11:59 PM.",
+      completed: false
+    },
+    {
+      id: "ev-2",
+      classId: "cs-201",
+      title: "Project 1: Linked Lists & Node Pointers",
+      date: formatDay(5),
+      type: "assignment",
+      weight: 10,
+      totalScore: 100,
+      startTime: "23:59",
+      materialUrl: "https://github.com/classroom/assignment-linked-lists",
+      description: "Implement doubly-linked list with add, remove, and reverse operations in Java. Run test suite with JUnit.",
+      completed: false
+    },
+    {
+      id: "ev-3",
+      classId: "phys-101",
+      title: "Lab 2: Newton's Second Law & Incline Friction",
+      date: formatDay(8),
+      type: "assignment",
+      weight: 5,
+      totalScore: 50,
+      materialUrl: "https://webassign.net/physics/newtons-laws-lab",
+      description: "Perform sensor calibration and calculate acceleration on varying incline angles.",
+      completed: false
+    },
+    {
+      id: "ev-4",
+      classId: "cs-201",
+      title: "Quiz 1: Big-O & Complexity Analysis",
+      date: formatDay(11),
+      type: "quiz",
+      weight: 5,
+      totalScore: 25,
+      startTime: "10:00",
+      endTime: "10:50",
+      materialUrl: "https://gradescope.com/courses/cs201/quizzes/quiz1",
+      description: "Timed 50-minute quiz covering constant vs logarithmic vs linear time complexities.",
+      completed: false
+    }
+  ];
+};
+
 export function AcademicProvider({ children }: { children: React.ReactNode }) {
   const [classes, setClasses] = useState<Class[]>([]);
   const [events, setEvents] = useState<AcademicEvent[]>([]);
@@ -489,6 +566,7 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
   const [icalFeeds, setIcalFeeds] = useState<SavedICalFeed[]>([]);
   const [lastGlobalSync, setLastGlobalSync] = useState<string | null>(null);
   const [isAutoSyncing, setIsAutoSyncing] = useState<boolean>(false);
+  const [isLoaded, setIsLoaded] = useState<boolean>(false);
 
   const [currentView, setCurrentView] = useState<'calendar' | 'dashboard' | 'notebook'>('calendar');
   const [theme, setTheme] = useState<string>('midnight');
@@ -496,221 +574,251 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
 
   // Load state from localStorage on initial render
   useEffect(() => {
-    const savedClasses = localStorage.getItem('aca_classes');
-    const savedEvents = localStorage.getItem('aca_events');
-    const savedSources = localStorage.getItem('aca_sources');
-    const savedFlashcards = localStorage.getItem('aca_flashcards');
-    const savedObjectives = localStorage.getItem('aca_objectives');
-    const savedFeeds = localStorage.getItem('aca_ical_feeds');
-    const savedLastSync = localStorage.getItem('aca_last_sync');
-    const savedTheme = localStorage.getItem('aca_theme') || 'midnight';
-    const savedKey = localStorage.getItem('aca_gemini_key') || '';
-    
-    let initialClasses: Class[] = [];
-    if (savedClasses) {
-      initialClasses = JSON.parse(savedClasses);
-      setClasses(initialClasses);
-    } else {
-      const defaultClasses: Class[] = [
-        { id: "phys-101", name: "Physics 101: Mechanics", color: "#38bdf8", credits: 4, code: "PHYS 101", instructor: "Dr. Henderson" },
-        { id: "cs-201", name: "CS 201: Data Structures", color: "#8b5cf6", credits: 4, code: "CS 201", instructor: "Prof. Alan Turing" }
-      ];
-      initialClasses = defaultClasses;
-      setClasses(defaultClasses);
-    }
-
-    if (savedEvents) {
-      setEvents(JSON.parse(savedEvents));
-    } else {
-      const today = new Date();
-      const formatDay = (offset: number) => {
-        const d = new Date(today);
-        d.setDate(today.getDate() + offset);
-        return formatLocalDate(d);
-      };
-
-      const defaultEvents: AcademicEvent[] = [
-        {
-          id: "ev-1",
-          classId: "phys-101",
-          title: "Homework 1: Kinematics & Vector Math",
-          date: formatDay(2),
-          type: "assignment",
-          weight: 5,
-          totalScore: 100,
-          startTime: "17:00",
-          endTime: "18:00",
-          materialUrl: "https://d2l.university.edu/d2l/lms/dropbox/user/folder_submit.d2l?db=84920",
-          description: "Complete all 6 problems from Chapter 2 in the Physics Workbook. Submit your PDF work on the D2L portal before 11:59 PM.",
-          completed: false
-        },
-        {
-          id: "ev-2",
-          classId: "cs-201",
-          title: "Project 1: Linked Lists & Node Pointers",
-          date: formatDay(5),
-          type: "assignment",
-          weight: 10,
-          totalScore: 100,
-          startTime: "23:59",
-          materialUrl: "https://github.com/classroom/assignment-linked-lists",
-          description: "Implement doubly-linked list with add, remove, and reverse operations in Java. Run test suite with JUnit.",
-          completed: false
-        },
-        {
-          id: "ev-3",
-          classId: "phys-101",
-          title: "Lab 2: Newton's Second Law & Incline Friction",
-          date: formatDay(8),
-          type: "assignment",
-          weight: 5,
-          totalScore: 50,
-          materialUrl: "https://webassign.net/physics/newtons-laws-lab",
-          description: "Perform sensor calibration and calculate acceleration on varying incline angles.",
-          completed: false
-        },
-        {
-          id: "ev-4",
-          classId: "cs-201",
-          title: "Quiz 1: Big-O & Complexity Analysis",
-          date: formatDay(11),
-          type: "quiz",
-          weight: 5,
-          totalScore: 25,
-          startTime: "10:00",
-          endTime: "10:50",
-          materialUrl: "https://gradescope.com/courses/cs201/quizzes/quiz1",
-          description: "Timed 50-minute quiz covering constant vs logarithmic vs linear time complexities.",
-          completed: false
-        }
-      ];
-      setEvents(defaultEvents);
-    }
-
-    if (savedSources) setSources(JSON.parse(savedSources));
-    if (savedFlashcards) setFlashcards(JSON.parse(savedFlashcards));
-    if (savedObjectives) setObjectives(JSON.parse(savedObjectives));
-    
-    // Ensure all feeds and classes with icalUrl are aligned
-    let loadedFeeds: SavedICalFeed[] = savedFeeds ? JSON.parse(savedFeeds) : [];
-    let feedsUpdated = false;
-
-    // Check if any class has icalUrl but is missing from savedFeeds
-    initialClasses.forEach(cls => {
-      if (cls.icalUrl && cls.icalUrl.trim()) {
-        const existing = loadedFeeds.find(f => f.classId === cls.id || f.url === cls.icalUrl);
-        if (!existing) {
-          loadedFeeds.push({
-            id: Math.random().toString(36).substr(2, 9),
-            name: `${cls.name} Feed`,
-            url: cls.icalUrl.trim(),
-            classId: cls.id,
-            autoSync: true
-          });
-          feedsUpdated = true;
-        } else if (!existing.classId) {
-          existing.classId = cls.id;
-          feedsUpdated = true;
+    try {
+      const savedClasses = localStorage.getItem('aca_classes');
+      const savedEvents = localStorage.getItem('aca_events');
+      const savedSources = localStorage.getItem('aca_sources');
+      const savedFlashcards = localStorage.getItem('aca_flashcards');
+      const savedObjectives = localStorage.getItem('aca_objectives');
+      const savedFeeds = localStorage.getItem('aca_ical_feeds');
+      const savedLastSync = localStorage.getItem('aca_last_sync');
+      const savedTheme = localStorage.getItem('aca_theme') || 'midnight';
+      const savedKey = localStorage.getItem('aca_gemini_key') || '';
+      
+      let initialClasses: Class[] = [];
+      if (savedClasses) {
+        try {
+          const parsed = JSON.parse(savedClasses);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            initialClasses = parsed;
+          }
+        } catch (e) {
+          console.error("Failed to parse saved classes", e);
         }
       }
-    });
 
-    setIcalFeeds(loadedFeeds);
-    if (feedsUpdated) {
-      localStorage.setItem('aca_ical_feeds', JSON.stringify(loadedFeeds));
-    }
+      // If no saved classes exist, or if an empty array was saved due to a previous race condition wipe
+      if (initialClasses.length === 0) {
+        initialClasses = getDefaultClasses();
+      }
+      setClasses(initialClasses);
 
-    if (savedLastSync) setLastGlobalSync(savedLastSync);
-    if (savedKey) setGeminiKey(savedKey);
-    
-    setTheme(savedTheme);
-    document.body.setAttribute('data-theme', savedTheme);
-
-    // Initial background auto-sync for saved feeds
-    if (loadedFeeds.length > 0) {
-      setTimeout(() => {
-        loadedFeeds.forEach(feed => {
-          if (feed.autoSync) {
-            axios.get(`/api/d2l?url=${encodeURIComponent(feed.url)}`).then(res => {
-              const fetchedEvents = res.data.events || [];
-              if (fetchedEvents.length > 0) {
-                setEvents(prevEvents => {
-                  const newEvs: AcademicEvent[] = [];
-                  fetchedEvents.forEach((ev: any) => {
-                    const exists = prevEvents.some(e => 
-                      (e.title.toLowerCase() === ev.title.toLowerCase() && e.date === ev.date) ||
-                      (ev.id && e.id === `ev-ical-${ev.id}`)
-                    );
-                    if (!exists) {
-                      newEvs.push({
-                        id: `ev-ical-${ev.id || Math.random().toString(36).substr(2, 9)}`,
-                        title: ev.title,
-                        classId: feed.classId || 'phys-101',
-                        date: ev.date,
-                        type: ev.title.toLowerCase().includes('quiz') ? 'quiz' : (ev.title.toLowerCase().includes('exam') || ev.title.toLowerCase().includes('test')) ? 'exam' : ev.type || 'assignment',
-                        description: ev.description || '',
-                        materialUrl: ev.location || undefined,
-                        weight: 10,
-                        totalScore: 100,
-                        completed: false,
-                        icalFeedId: feed.id
-                      });
-                    }
-                  });
-                  return newEvs.length > 0 ? [...prevEvents, ...newEvs] : prevEvents;
-                });
-              }
-            }).catch(err => {
-              console.error("Auto sync on load failed for feed:", feed.name, err);
-            });
+      let initialEvents: AcademicEvent[] = [];
+      if (savedEvents) {
+        try {
+          const parsed = JSON.parse(savedEvents);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            initialEvents = parsed;
           }
-        });
-      }, 1000);
+        } catch (e) {
+          console.error("Failed to parse saved events", e);
+        }
+      }
+
+      if (initialEvents.length === 0) {
+        initialEvents = getDefaultEvents();
+      }
+      setEvents(initialEvents);
+
+      if (savedSources) {
+        try {
+          const parsed = JSON.parse(savedSources);
+          if (Array.isArray(parsed) && parsed.length > 0) setSources(parsed);
+        } catch {}
+      }
+
+      if (savedFlashcards) {
+        try {
+          const parsed = JSON.parse(savedFlashcards);
+          if (Array.isArray(parsed) && parsed.length > 0) setFlashcards(parsed);
+        } catch {}
+      }
+
+      if (savedObjectives) {
+        try {
+          const parsed = JSON.parse(savedObjectives);
+          if (Array.isArray(parsed) && parsed.length > 0) setObjectives(parsed);
+        } catch {}
+      }
+      
+      // Ensure all feeds and classes with icalUrl are aligned
+      let loadedFeeds: SavedICalFeed[] = [];
+      if (savedFeeds) {
+        try {
+          const parsed = JSON.parse(savedFeeds);
+          if (Array.isArray(parsed)) loadedFeeds = parsed;
+        } catch {}
+      }
+
+      let feedsUpdated = false;
+
+      // Check if any class has icalUrl but is missing from savedFeeds
+      initialClasses.forEach(cls => {
+        if (cls.icalUrl && cls.icalUrl.trim()) {
+          const existing = loadedFeeds.find(f => f.classId === cls.id || f.url === cls.icalUrl);
+          if (!existing) {
+            loadedFeeds.push({
+              id: Math.random().toString(36).substr(2, 9),
+              name: `${cls.name} Feed`,
+              url: cls.icalUrl.trim(),
+              classId: cls.id,
+              autoSync: true
+            });
+            feedsUpdated = true;
+          } else if (!existing.classId) {
+            existing.classId = cls.id;
+            feedsUpdated = true;
+          }
+        }
+      });
+
+      setIcalFeeds(loadedFeeds);
+      if (feedsUpdated) {
+        localStorage.setItem('aca_ical_feeds', JSON.stringify(loadedFeeds));
+      }
+
+      if (savedLastSync) setLastGlobalSync(savedLastSync);
+      if (savedKey) setGeminiKey(savedKey);
+      
+      setTheme(savedTheme);
+      document.body.setAttribute('data-theme', savedTheme);
+
+      // Initial background auto-sync for saved feeds
+      if (loadedFeeds.length > 0) {
+        setTimeout(() => {
+          loadedFeeds.forEach(feed => {
+            if (feed.autoSync) {
+              axios.get(`/api/d2l?url=${encodeURIComponent(feed.url)}`).then(res => {
+                const fetchedEvents = res.data.events || [];
+                if (fetchedEvents.length > 0) {
+                  setEvents(prevEvents => {
+                    const newEvs: AcademicEvent[] = [];
+                    fetchedEvents.forEach((ev: any) => {
+                      const exists = prevEvents.some(e => 
+                        (e.title.toLowerCase() === ev.title.toLowerCase() && e.date === ev.date) ||
+                        (ev.id && e.id === `ev-ical-${ev.id}`)
+                      );
+                      if (!exists) {
+                        newEvs.push({
+                          id: `ev-ical-${ev.id || Math.random().toString(36).substr(2, 9)}`,
+                          title: ev.title,
+                          classId: feed.classId || 'phys-101',
+                          date: ev.date,
+                          type: ev.title.toLowerCase().includes('quiz') ? 'quiz' : (ev.title.toLowerCase().includes('exam') || ev.title.toLowerCase().includes('test')) ? 'exam' : ev.type || 'assignment',
+                          description: ev.description || '',
+                          materialUrl: ev.location || undefined,
+                          weight: 10,
+                          totalScore: 100,
+                          completed: false,
+                          icalFeedId: feed.id
+                        });
+                      }
+                    });
+                    return newEvs.length > 0 ? [...prevEvents, ...newEvs] : prevEvents;
+                  });
+                }
+              }).catch(err => {
+                console.error("Auto sync on load failed for feed:", feed.name, err);
+              });
+            }
+          });
+        }, 1000);
+      }
+    } catch (err) {
+      console.error("Error reading localStorage on mount:", err);
+    } finally {
+      setIsLoaded(true);
     }
   }, []);
 
-  // Sync state to localStorage automatically
+  // Sync state to localStorage ONLY AFTER initial load has completed
   useEffect(() => {
-    localStorage.setItem('aca_classes', JSON.stringify(classes));
-  }, [classes]);
-
-  useEffect(() => {
-    localStorage.setItem('aca_events', JSON.stringify(events));
-  }, [events]);
-
-  useEffect(() => {
-    localStorage.setItem('aca_sources', JSON.stringify(sources));
-  }, [sources]);
-
-  useEffect(() => {
-    localStorage.setItem('aca_flashcards', JSON.stringify(flashcards));
-  }, [flashcards]);
-
-  useEffect(() => {
-    localStorage.setItem('aca_objectives', JSON.stringify(objectives));
-  }, [objectives]);
-
-  useEffect(() => {
-    localStorage.setItem('aca_ical_feeds', JSON.stringify(icalFeeds));
-  }, [icalFeeds]);
-
-  useEffect(() => {
-    if (lastGlobalSync) {
-      localStorage.setItem('aca_last_sync', lastGlobalSync);
+    if (!isLoaded) return;
+    try {
+      localStorage.setItem('aca_classes', JSON.stringify(classes));
+    } catch (e) {
+      console.error("Failed to save classes:", e);
     }
-  }, [lastGlobalSync]);
+  }, [classes, isLoaded]);
 
   useEffect(() => {
-    localStorage.setItem('aca_theme', theme);
-    document.body.setAttribute('data-theme', theme);
-  }, [theme]);
+    if (!isLoaded) return;
+    try {
+      localStorage.setItem('aca_events', JSON.stringify(events));
+    } catch (e) {
+      console.error("Failed to save events:", e);
+    }
+  }, [events, isLoaded]);
 
   useEffect(() => {
-    localStorage.setItem('aca_gemini_key', geminiKey);
-  }, [geminiKey]);
+    if (!isLoaded) return;
+    try {
+      localStorage.setItem('aca_sources', JSON.stringify(sources));
+    } catch (e) {
+      console.error("Failed to save sources:", e);
+    }
+  }, [sources, isLoaded]);
+
+  useEffect(() => {
+    if (!isLoaded) return;
+    try {
+      localStorage.setItem('aca_flashcards', JSON.stringify(flashcards));
+    } catch (e) {
+      console.error("Failed to save flashcards:", e);
+    }
+  }, [flashcards, isLoaded]);
+
+  useEffect(() => {
+    if (!isLoaded) return;
+    try {
+      localStorage.setItem('aca_objectives', JSON.stringify(objectives));
+    } catch (e) {
+      console.error("Failed to save objectives:", e);
+    }
+  }, [objectives, isLoaded]);
+
+  useEffect(() => {
+    if (!isLoaded) return;
+    try {
+      localStorage.setItem('aca_ical_feeds', JSON.stringify(icalFeeds));
+    } catch (e) {
+      console.error("Failed to save ical feeds:", e);
+    }
+  }, [icalFeeds, isLoaded]);
+
+  useEffect(() => {
+    if (!isLoaded) return;
+    if (lastGlobalSync) {
+      try {
+        localStorage.setItem('aca_last_sync', lastGlobalSync);
+      } catch (e) {
+        console.error("Failed to save last global sync:", e);
+      }
+    }
+  }, [lastGlobalSync, isLoaded]);
+
+  useEffect(() => {
+    if (!isLoaded) return;
+    try {
+      localStorage.setItem('aca_theme', theme);
+      document.body.setAttribute('data-theme', theme);
+    } catch (e) {
+      console.error("Failed to save theme:", e);
+    }
+  }, [theme, isLoaded]);
+
+  useEffect(() => {
+    if (!isLoaded) return;
+    try {
+      localStorage.setItem('aca_gemini_key', geminiKey);
+    } catch (e) {
+      console.error("Failed to save gemini key:", e);
+    }
+  }, [geminiKey, isLoaded]);
 
   // Default initializers for demo data if user opens fresh app
   useEffect(() => {
+    if (!isLoaded) return;
     if (classes.length > 0 && sources.length === 0) {
       let defaultSources: NotebookSource[] = [];
       classes.forEach(c => {
@@ -718,9 +826,10 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
       });
       setSources(defaultSources);
     }
-  }, [classes, sources]);
+  }, [classes, sources, isLoaded]);
 
   useEffect(() => {
+    if (!isLoaded) return;
     if (classes.length > 0 && flashcards.length === 0) {
       let defaultFCs: Flashcard[] = [];
       classes.forEach(c => {
@@ -728,9 +837,10 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
       });
       setFlashcards(defaultFCs);
     }
-  }, [classes, flashcards]);
+  }, [classes, flashcards, isLoaded]);
 
   useEffect(() => {
+    if (!isLoaded) return;
     if (classes.length > 0 && objectives.length === 0) {
       let defaultObjs: CoreObjective[] = [];
       classes.forEach(c => {
@@ -738,7 +848,69 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
       });
       setObjectives(defaultObjs);
     }
-  }, [classes, objectives]);
+  }, [classes, objectives, isLoaded]);
+
+  // Reset to default initial demo data
+  const resetToDefaultData = () => {
+    const defaultCls = getDefaultClasses();
+    const defaultEvs = getDefaultEvents();
+    
+    let defaultSrcs: NotebookSource[] = [];
+    defaultCls.forEach(c => {
+      defaultSrcs = [...defaultSrcs, ...generateDefaultSources(c.id, c.name)];
+    });
+
+    let defaultFCs: Flashcard[] = [];
+    defaultCls.forEach(c => {
+      defaultFCs = [...defaultFCs, ...generateDefaultFlashcards(c.id, c.name)];
+    });
+
+    let defaultObjs: CoreObjective[] = [];
+    defaultCls.forEach(c => {
+      defaultObjs = [...defaultObjs, ...generateDefaultObjectives(c.id, c.name)];
+    });
+
+    setClasses(defaultCls);
+    setEvents(defaultEvs);
+    setSources(defaultSrcs);
+    setFlashcards(defaultFCs);
+    setObjectives(defaultObjs);
+    setIcalFeeds([]);
+  };
+
+  // Export full application state as JSON
+  const exportBackupData = (): string => {
+    const backup = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      classes,
+      events,
+      sources,
+      flashcards,
+      objectives,
+      icalFeeds,
+      theme
+    };
+    return JSON.stringify(backup, null, 2);
+  };
+
+  // Import full application state from JSON string
+  const importBackupData = (jsonStr: string): boolean => {
+    try {
+      const data = JSON.parse(jsonStr);
+      if (Array.isArray(data.classes)) setClasses(data.classes);
+      if (Array.isArray(data.events)) setEvents(data.events);
+      if (Array.isArray(data.sources)) setSources(data.sources);
+      if (Array.isArray(data.flashcards)) setFlashcards(data.flashcards);
+      if (Array.isArray(data.objectives)) setObjectives(data.objectives);
+      if (Array.isArray(data.icalFeeds)) setIcalFeeds(data.icalFeeds);
+      if (typeof data.theme === 'string') setTheme(data.theme);
+      return true;
+    } catch (e) {
+      console.error("Failed to import backup data:", e);
+      return false;
+    }
+  };
 
   // Helper to ensure D2L materials & descriptions automatically convert into NotebookLM sources
   const syncEventToNotebookSource = useCallback((event: AcademicEvent) => {
@@ -1125,6 +1297,7 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
       icalFeeds,
       lastGlobalSync,
       isAutoSyncing,
+      isLoaded,
 
       addClass, 
       addEvent,
@@ -1149,6 +1322,10 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
       deleteICalFeed,
       syncAllICalFeeds,
       syncSingleICalFeed,
+
+      resetToDefaultData,
+      exportBackupData,
+      importBackupData,
 
       currentView,
       setCurrentView,
