@@ -375,23 +375,35 @@ ${syllabusText}`;
 
   const handleMaterialFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || !selectedClass) return;
 
-    if (!newMaterialTitle) {
-      setNewMaterialTitle(file.name.replace(/\.[^/.]+$/, ""));
-    }
-
+    const fileNameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
+    const title = newMaterialTitle.trim() || fileNameWithoutExt;
     const isPdf = file.name.toLowerCase().endsWith('.pdf');
-    if (isPdf) {
-      setNewMaterialType('pdf');
-    }
+    const type = isPdf ? 'pdf' : file.name.toLowerCase().endsWith('.docx') ? 'pdf' : 'note';
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      const text = event.target?.result as string;
-      if (text) {
-        setNewMaterialContent(text);
-      }
+      const text = (event.target?.result as string) || '';
+      const content = text.trim() || `${title} (Uploaded File)\nFilename: ${file.name}`;
+      const wordCount = content.split(/\s+/).filter(Boolean).length;
+
+      addSource({
+        classId: selectedClass.id,
+        title,
+        type,
+        content,
+        url: newMaterialUrl.trim() || undefined,
+        wordCount: wordCount > 0 ? wordCount : 50
+      });
+
+      // Clear state and close modal
+      setNewMaterialTitle("");
+      setNewMaterialType("pdf");
+      setNewMaterialUrl("");
+      setNewMaterialContent("");
+      setIsAddMaterialOpen(false);
+      alert(`✨ Successfully uploaded and added "${title}" to ${selectedClass.name} materials!`);
     };
     reader.readAsText(file);
   };
@@ -409,7 +421,7 @@ ${syllabusText}`;
       type: newMaterialType,
       content,
       url: newMaterialUrl.trim() || undefined,
-      wordCount
+      wordCount: wordCount > 0 ? wordCount : 20
     });
 
     setNewMaterialTitle("");

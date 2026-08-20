@@ -62,13 +62,50 @@ export async function GET(request: NextRequest) {
       }
 
       const summaryLower = (event.summary || '').toLowerCase();
+      const rawDesc = event.description || '';
+      const rawLocation = event.location || '';
+      
+      // Extract direct URLs from ical properties or description
+      let directUrl = '';
+      try {
+        const urlProp = vevent.getFirstPropertyValue('url') || vevent.getFirstPropertyValue('attach');
+        if (urlProp && typeof urlProp === 'string' && urlProp.startsWith('http')) {
+          directUrl = urlProp;
+        }
+      } catch {}
+
+      if (!directUrl) {
+        const urlMatch = (rawDesc + ' ' + rawLocation).match(/https?:\/\/[^\s<>"']+/i);
+        if (urlMatch) {
+          directUrl = urlMatch[0];
+        }
+      }
+
       let type: 'assignment' | 'exam' | 'quiz' | 'material' = 'assignment';
-      if (summaryLower.includes('quiz')) type = 'quiz';
-      else if (summaryLower.includes('exam') || summaryLower.includes('test') || summaryLower.includes('midterm') || summaryLower.includes('final')) type = 'exam';
-      else if (summaryLower.includes('lecture') || summaryLower.includes('slide') || summaryLower.includes('reading') || summaryLower.includes('session') || summaryLower.includes('film')) type = 'material';
+      if (summaryLower.includes('quiz')) {
+        type = 'quiz';
+      } else if (summaryLower.includes('exam') || summaryLower.includes('test') || summaryLower.includes('midterm') || summaryLower.includes('final')) {
+        type = 'exam';
+      } else if (
+        summaryLower.includes('lecture') || 
+        summaryLower.includes('slide') || 
+        summaryLower.includes('reading') || 
+        summaryLower.includes('session') || 
+        summaryLower.includes('notes') || 
+        summaryLower.includes('module') || 
+        summaryLower.includes('topic') || 
+        summaryLower.includes('chapter') || 
+        summaryLower.includes('handout') || 
+        summaryLower.includes('syllabus') || 
+        summaryLower.includes('presentation') || 
+        summaryLower.includes('video') || 
+        summaryLower.includes('film')
+      ) {
+        type = 'material';
+      }
 
       // Clean HTML tags from description if present
-      let cleanDesc = event.description || '';
+      let cleanDesc = rawDesc;
       if (cleanDesc.includes('<')) {
         cleanDesc = cleanDesc.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
       }
@@ -78,7 +115,8 @@ export async function GET(request: NextRequest) {
         title: event.summary || 'Untitled Event',
         date: eventDate,
         description: cleanDesc,
-        location: event.location || '',
+        location: rawLocation,
+        materialUrl: directUrl || rawLocation || undefined,
         type
       };
     });

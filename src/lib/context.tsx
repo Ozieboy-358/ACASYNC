@@ -691,31 +691,69 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
               axios.get(`/api/d2l?url=${encodeURIComponent(feed.url)}`).then(res => {
                 const fetchedEvents = res.data.events || [];
                 if (fetchedEvents.length > 0) {
+                  const newEvs: AcademicEvent[] = [];
                   setEvents(prevEvents => {
-                    const newEvs: AcademicEvent[] = [];
                     fetchedEvents.forEach((ev: any) => {
                       const exists = prevEvents.some(e => 
                         (e.title.toLowerCase() === ev.title.toLowerCase() && e.date === ev.date) ||
                         (ev.id && e.id === `ev-ical-${ev.id}`)
                       );
                       if (!exists) {
-                        newEvs.push({
+                        const newEv: AcademicEvent = {
                           id: `ev-ical-${ev.id || Math.random().toString(36).substr(2, 9)}`,
                           title: ev.title,
-                          classId: feed.classId || 'phys-101',
+                          classId: feed.classId || initialClasses[0]?.id || 'phys-101',
                           date: ev.date,
-                          type: ev.title.toLowerCase().includes('quiz') ? 'quiz' : (ev.title.toLowerCase().includes('exam') || ev.title.toLowerCase().includes('test')) ? 'exam' : ev.type || 'assignment',
+                          type: ev.type || (ev.title.toLowerCase().includes('quiz') ? 'quiz' : (ev.title.toLowerCase().includes('exam') || ev.title.toLowerCase().includes('test')) ? 'exam' : 'assignment'),
                           description: ev.description || '',
-                          materialUrl: ev.location || undefined,
-                          weight: 10,
-                          totalScore: 100,
+                          materialUrl: ev.materialUrl || ev.location || undefined,
+                          weight: ev.type === 'material' ? undefined : 10,
+                          totalScore: ev.type === 'material' ? undefined : 100,
                           completed: false,
                           icalFeedId: feed.id
-                        });
+                        };
+                        newEvs.push(newEv);
                       }
                     });
                     return newEvs.length > 0 ? [...prevEvents, ...newEvs] : prevEvents;
                   });
+
+                  // Auto-extract materials and lecture notes into NotebookLM sources
+                  if (newEvs.length > 0) {
+                    setSources(prevSources => {
+                      let updatedSources = [...prevSources];
+                      newEvs.forEach(ev => {
+                        if (!ev.classId) return;
+                        const sourceId = `source-${ev.id}`;
+                        const existingIdx = updatedSources.findIndex(s => s.id === sourceId || (s.classId === ev.classId && s.title.toLowerCase() === ev.title.toLowerCase()));
+                        const isMat = ev.type === 'material';
+                        const sourceTitle = isMat ? `${ev.title} [D2L Material]` : `${ev.title} [D2L Item]`;
+                        const newSourceContent = `# ${ev.title}\nCategory: ${ev.type.toUpperCase()}\nDate: ${ev.date}\n${ev.materialUrl ? `Resource / D2L Link: ${ev.materialUrl}\n` : ''}${ev.description ? `\nOverview & Lecture Notes:\n${ev.description}` : ''}`;
+                        const words = newSourceContent.trim().split(/\s+/).filter(Boolean).length;
+
+                        if (existingIdx >= 0) {
+                          updatedSources[existingIdx] = {
+                            ...updatedSources[existingIdx],
+                            content: newSourceContent,
+                            url: ev.materialUrl || updatedSources[existingIdx].url,
+                            wordCount: words
+                          };
+                        } else {
+                          updatedSources.push({
+                            id: sourceId,
+                            classId: ev.classId,
+                            title: sourceTitle,
+                            type: ev.materialUrl ? 'link' : isMat ? 'd2l_material' : 'note',
+                            content: newSourceContent,
+                            url: ev.materialUrl,
+                            wordCount: words,
+                            addedAt: new Date().toISOString()
+                          });
+                        }
+                      });
+                      return updatedSources;
+                    });
+                  }
                 }
               }).catch(err => {
                 console.error("Auto sync on load failed for feed:", feed.name, err);
@@ -916,19 +954,24 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
   const syncEventToNotebookSource = useCallback((event: AcademicEvent) => {
     if (!event.classId) return;
 
-    // If event has description or materialUrl, ensure NotebookSource exists
-    if ((event.description && event.description.length > 10) || event.materialUrl) {
+    // Convert any event with description, materialUrl, or material/lecture type into a NotebookSource
+    const isMat = event.type === 'material';
+    const hasInfo = Boolean((event.description && event.description.length > 5) || event.materialUrl || isMat);
+    if (hasInfo) {
       const sourceId = `source-${event.id}`;
       setSources(prev => {
-        const existingIdx = prev.findIndex(s => s.id === sourceId || (s.classId === event.classId && s.title === event.title));
-        const newSourceContent = `${event.title} (${event.type.toUpperCase()})\nDue Date: ${event.date}\n${event.description || ''}\n${event.materialUrl ? `Link: ${event.materialUrl}` : ''}`;
+        const existingIdx = prev.findIndex(s => s.id === sourceId || (s.classId === event.classId && s.title.toLowerCase() === event.title.toLowerCase()));
+        const sourceTitle = isMat ? `${event.title} [D2L Material]` : `${event.title} [D2L Item]`;
+        const newSourceContent = `# ${event.title}\nCategory: ${event.type.toUpperCase()}\nDate: ${event.date}\n${event.materialUrl ? `Resource / D2L Link: ${event.materialUrl}\n` : ''}${event.description ? `\nOverview & Lecture Notes:\n${event.description}` : ''}`;
+        const words = newSourceContent.trim().split(/\s+/).filter(Boolean).length;
 
         if (existingIdx >= 0) {
           const updated = [...prev];
           updated[existingIdx] = {
             ...updated[existingIdx],
             content: newSourceContent,
-            wordCount: newSourceContent.trim().split(/\s+/).length
+            url: event.materialUrl || updated[existingIdx].url,
+            wordCount: words
           };
           return updated;
         } else {
@@ -937,11 +980,11 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
             {
               id: sourceId,
               classId: event.classId,
-              title: `${event.title} [D2L Item]`,
-              type: event.materialUrl ? 'link' : 'd2l_material',
+              title: sourceTitle,
+              type: event.materialUrl ? 'link' : isMat ? 'd2l_material' : 'note',
               content: newSourceContent,
               url: event.materialUrl,
-              wordCount: newSourceContent.trim().split(/\s+/).length,
+              wordCount: words,
               addedAt: new Date().toISOString()
             }
           ];
@@ -965,21 +1008,34 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
     const defaultObjs = generateDefaultObjectives(classId, cls.name);
     setObjectives(prev => [...prev, ...defaultObjs]);
 
-    // If icalUrl was provided, create/link SavedICalFeed and sync
+    // If icalUrl was provided, check if a feed already exists before creating a new one
     if (cls.icalUrl && cls.icalUrl.trim()) {
       const trimmedUrl = cls.icalUrl.trim();
-      const feedId = Math.random().toString(36).substr(2, 9);
-      const newFeed: SavedICalFeed = {
-        id: feedId,
-        name: `${cls.name} Feed`,
-        url: trimmedUrl,
-        classId: classId,
-        autoSync: true
-      };
-      setIcalFeeds(prev => [...prev, newFeed]);
-      setTimeout(() => {
-        syncSingleICalFeed(newFeed).catch(err => console.error("Error initial syncing class feed:", err));
-      }, 50);
+      setIcalFeeds(prev => {
+        const existingIdx = prev.findIndex(f => f.url === trimmedUrl || (f.classId && f.classId === classId));
+        if (existingIdx >= 0) {
+          const updated = [...prev];
+          updated[existingIdx] = {
+            ...updated[existingIdx],
+            classId: classId,
+            name: `${cls.name} Feed`
+          };
+          return updated;
+        } else {
+          const feedId = Math.random().toString(36).substr(2, 9);
+          const newFeed: SavedICalFeed = {
+            id: feedId,
+            name: `${cls.name} Feed`,
+            url: trimmedUrl,
+            classId: classId,
+            autoSync: true
+          };
+          setTimeout(() => {
+            syncSingleICalFeed(newFeed).catch(err => console.error("Error initial syncing class feed:", err));
+          }, 50);
+          return [...prev, newFeed];
+        }
+      });
     }
 
     return classId;
@@ -1146,15 +1202,25 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
 
   // iCal / D2L Saved Feeds methods
   const addICalFeed = (feed: Omit<SavedICalFeed, 'id'>): SavedICalFeed => {
-    const feedId = Math.random().toString(36).substr(2, 9);
-    const newFeed: SavedICalFeed = { ...feed, id: feedId };
-    setIcalFeeds(prev => [...prev, newFeed]);
+    let savedFeed: SavedICalFeed | undefined;
+    setIcalFeeds(prev => {
+      const existingIdx = prev.findIndex(f => f.url === feed.url || (feed.classId && f.classId === feed.classId));
+      if (existingIdx >= 0) {
+        const updated = [...prev];
+        savedFeed = { ...updated[existingIdx], ...feed };
+        updated[existingIdx] = savedFeed;
+        return updated;
+      }
+      const feedId = Math.random().toString(36).substr(2, 9);
+      savedFeed = { ...feed, id: feedId };
+      return [...prev, savedFeed];
+    });
 
     if (feed.classId && feed.url) {
       setClasses(clsPrev => clsPrev.map(c => c.id === feed.classId ? { ...c, icalUrl: feed.url } : c));
     }
 
-    return newFeed;
+    return savedFeed || { ...feed, id: Math.random().toString(36).substr(2, 9) };
   };
 
   const updateICalFeed = (updated: SavedICalFeed) => {
@@ -1222,16 +1288,17 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
             (ev.id && e.id === `ev-ical-${ev.id}`)
           );
           if (!exists) {
+            const isMat = ev.type === 'material';
             const newEv: AcademicEvent = {
               id: `ev-ical-${ev.id || Math.random().toString(36).substr(2, 9)}`,
               title: ev.title,
               classId: targetClassId!,
               date: ev.date,
-              type: ev.title.toLowerCase().includes('quiz') ? 'quiz' : (ev.title.toLowerCase().includes('exam') || ev.title.toLowerCase().includes('test') || ev.title.toLowerCase().includes('midterm')) ? 'exam' : ev.type || 'assignment',
+              type: ev.type || (ev.title.toLowerCase().includes('quiz') ? 'quiz' : (ev.title.toLowerCase().includes('exam') || ev.title.toLowerCase().includes('test') || ev.title.toLowerCase().includes('midterm')) ? 'exam' : 'assignment'),
               description: ev.description || '',
-              materialUrl: ev.location || undefined,
-              weight: 10,
-              totalScore: 100,
+              materialUrl: ev.materialUrl || ev.location || undefined,
+              weight: isMat ? undefined : (ev.type === 'quiz' ? 5 : ev.type === 'exam' ? 25 : 10),
+              totalScore: isMat ? undefined : 100,
               completed: false,
               icalFeedId: feed!.id
             };
@@ -1242,9 +1309,18 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
         return newEventsToAdd.length > 0 ? [...prevEvents, ...newEventsToAdd] : prevEvents;
       });
 
-      // Synchronize added events to notebook sources
-      newEventsToAdd.forEach(ev => {
-        syncEventToNotebookSource(ev);
+      // Synchronize all fetched materials and events into NotebookLM sources
+      fetchedEvents.forEach((ev: any) => {
+        syncEventToNotebookSource({
+          id: `ev-ical-${ev.id || Math.random().toString(36).substr(2, 9)}`,
+          title: ev.title,
+          classId: targetClassId!,
+          date: ev.date,
+          type: ev.type || 'assignment',
+          description: ev.description || '',
+          materialUrl: ev.materialUrl || ev.location || undefined,
+          completed: false
+        });
       });
 
       const nowStr = new Date().toISOString();

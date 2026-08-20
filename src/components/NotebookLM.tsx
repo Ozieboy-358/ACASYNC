@@ -236,26 +236,39 @@ export default function NotebookLM() {
     }, 100);
   };
 
-  // Handle File / PDF upload
+  // Handle File / PDF upload - Auto-saves and indexes instantly
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!newSourceTitle) {
-      setNewSourceTitle(file.name.replace(/\.[^/.]+$/, ""));
-    }
-
+    const fileNameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
+    const title = newSourceTitle.trim() || fileNameWithoutExt;
     const isPdf = file.name.toLowerCase().endsWith('.pdf');
-    if (isPdf) {
-      setNewSourceType('pdf');
-    }
+    const type = isPdf ? 'pdf' : file.name.toLowerCase().endsWith('.docx') ? 'pdf' : 'note';
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      const text = event.target?.result as string;
-      if (text) {
-        setNewSourceContent(text);
-      }
+      const text = (event.target?.result as string) || '';
+      const content = text.trim() || `${title} (Uploaded File)\nFilename: ${file.name}`;
+      const words = content.split(/\s+/).filter(Boolean).length;
+      const targetClass = selectedClassId === "all" ? "global" : selectedClassId;
+
+      addSource({
+        classId: targetClass,
+        title,
+        type,
+        content,
+        url: newSourceUrl || undefined,
+        wordCount: words > 0 ? words : 50
+      });
+
+      // Reset inputs & close modal
+      setNewSourceTitle("");
+      setNewSourceContent("");
+      setNewSourceUrl("");
+      setIsAddSourceOpen(false);
+
+      alert(`✨ Successfully uploaded and indexed "${title}" in NotebookLM!`);
     };
     reader.readAsText(file);
   };
@@ -273,7 +286,7 @@ export default function NotebookLM() {
       type: newSourceType === "link" ? "link" : newSourceType === "pdf" ? "pdf" : "note",
       content,
       url: newSourceUrl || undefined,
-      wordCount: words
+      wordCount: words > 0 ? words : 20
     });
 
     // Reset inputs
@@ -1233,6 +1246,18 @@ No markdown formatting or extra text outside the JSON array.`;
                       {source.type}
                     </span>
                     <span>{source.wordCount} words</span>
+                    {source.url && (
+                      <a 
+                        href={source.url} 
+                        target="_blank" 
+                        rel="noreferrer" 
+                        onClick={(e) => e.stopPropagation()}
+                        title="Open in D2L / Browser"
+                        style={{ color: "#38bdf8", fontSize: "10px", textDecoration: "none", marginLeft: "auto" }}
+                      >
+                        🔗 D2L Link
+                      </a>
+                    )}
                   </div>
                 </div>
                 <button 
@@ -2052,9 +2077,21 @@ No markdown formatting or extra text outside the JSON array.`;
           <header className={styles.readerHeader}>
             <div style={{ minWidth: 0, flex: 1 }}>
               <h2 title={activeViewerSource.title}>{activeViewerSource.title}</h2>
-              <p style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
-                {activeViewerSource.wordCount} words • {activeViewerSource.type}
-              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '2px' }}>
+                <p style={{ fontSize: "11px", color: "var(--text-secondary)", margin: 0 }}>
+                  {activeViewerSource.wordCount} words • {activeViewerSource.type}
+                </p>
+                {activeViewerSource.url && (
+                  <a 
+                    href={activeViewerSource.url} 
+                    target="_blank" 
+                    rel="noreferrer"
+                    style={{ fontSize: "11px", color: "#38bdf8", textDecoration: "underline", display: "inline-flex", alignItems: "center", gap: "2px" }}
+                  >
+                    🔗 Open in D2L / Web
+                  </a>
+                )}
+              </div>
             </div>
             <button className={styles.readerCloseBtn} onClick={() => setIsDocViewerOpen(false)}>
               &times;
