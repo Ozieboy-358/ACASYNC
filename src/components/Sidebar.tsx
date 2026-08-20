@@ -84,6 +84,10 @@ export default function Sidebar() {
   const [d2lUrl, setD2lUrl] = useState("");
   const [d2lFeedName, setD2lFeedName] = useState("");
   const [d2lClassId, setD2lClassId] = useState("");
+  const [d2lClassColor, setD2lClassColor] = useState("#38bdf8");
+  const [d2lCredits, setD2lCredits] = useState(3);
+  const [d2lInstructor, setD2lInstructor] = useState("");
+  const [d2lAutoSync, setD2lAutoSync] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSyncingClassFeed, setIsSyncingClassFeed] = useState(false);
 
@@ -120,20 +124,36 @@ export default function Sidebar() {
       const feedName = d2lFeedName.trim() || "D2L Course Feed";
       const trimmedUrl = d2lUrl.trim();
       
-      // If class was explicitly chosen, link icalUrl directly to class
+      let targetClassId = d2lClassId;
+
       if (d2lClassId) {
         const targetCls = classes.find(c => c.id === d2lClassId);
         if (targetCls) {
-          updateClass({ ...targetCls, icalUrl: trimmedUrl });
+          updateClass({ 
+            ...targetCls, 
+            icalUrl: trimmedUrl,
+            color: d2lClassColor || targetCls.color,
+            credits: d2lCredits || targetCls.credits,
+            instructor: d2lInstructor.trim() || targetCls.instructor
+          });
         }
+      } else {
+        // Create new class with the user's customized settings
+        targetClassId = addClass({
+          name: feedName,
+          color: d2lClassColor || "#38bdf8",
+          credits: d2lCredits || 3,
+          instructor: d2lInstructor.trim() || undefined,
+          icalUrl: trimmedUrl
+        });
       }
 
       // Save iCal Feed so it automatically updates & saves import data
       const newFeed = addICalFeed({
         name: feedName,
         url: trimmedUrl,
-        classId: d2lClassId || undefined,
-        autoSync: true,
+        classId: targetClassId || undefined,
+        autoSync: d2lAutoSync,
         lastSyncedAt: new Date().toISOString()
       });
 
@@ -143,8 +163,12 @@ export default function Sidebar() {
         setD2lUrl("");
         setD2lFeedName("");
         setD2lClassId("");
+        setD2lClassColor("#38bdf8");
+        setD2lCredits(3);
+        setD2lInstructor("");
+        setD2lAutoSync(true);
         setIsD2LModalOpen(false);
-        alert(`Successfully saved iCal feed "${feedName}" & imported ${res.eventCount} events!`);
+        alert(`✨ Successfully saved feed "${feedName}" & imported ${res.eventCount} assignments/materials!`);
       } else {
         alert("Saved feed, but failed to fetch initial data. Check the URL.");
       }
@@ -1195,16 +1219,17 @@ ${syllabusText}`;
       >
         <form onSubmit={handleD2LSync} className={styles.form}>
           <p className={styles.instructionText}>
-            Paste your D2L or Canvas iCal subscription URL below. AcaSync will automatically save this feed and keep your assignments auto-synced across sessions!
+            Paste your D2L or Canvas iCal subscription URL below. Customize course color, credits, and auto-sync options before saving.
           </p>
           <div className={styles.formGroup}>
-            <label>Feed Name / Label</label>
+            <label>Course / Feed Name</label>
             <input 
               type="text" 
               value={d2lFeedName} 
               onChange={(e) => setD2lFeedName(e.target.value)}
-              placeholder="e.g. Fall Semester D2L Feed"
+              placeholder="e.g. CS 201: Data Structures"
               className={styles.input}
+              required
             />
           </div>
           <div className={styles.formGroup}>
@@ -1220,20 +1245,102 @@ ${syllabusText}`;
             />
           </div>
           <div className={styles.formGroup}>
-            <label>Link to Class (Optional)</label>
+            <label>Link to Existing Class (Optional)</label>
             <select 
               value={d2lClassId} 
-              onChange={(e) => setD2lClassId(e.target.value)}
+              onChange={(e) => {
+                const cid = e.target.value;
+                setD2lClassId(cid);
+                if (cid) {
+                  const match = classes.find(c => c.id === cid);
+                  if (match) {
+                    setD2lFeedName(match.name);
+                    setD2lClassColor(match.color);
+                    setD2lCredits(match.credits || 3);
+                    setD2lInstructor(match.instructor || "");
+                  }
+                }
+              }}
               className={styles.input}
             >
-              <option value="">Auto-create or match existing class</option>
+              <option value="">Create new class from this feed</option>
               {classes.map(c => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
           </div>
-          <button type="submit" className="btn-primary" disabled={isSyncing}>
-            {isSyncing ? "Saving & Syncing Feed..." : "Save Feed & Sync Assignments"}
+
+          {/* Customization Options */}
+          <div style={{ background: 'rgba(255, 255, 255, 0.04)', padding: '14px', borderRadius: '10px', border: '1px solid var(--card-border)', display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '4px' }}>
+            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              🎨 Course & Sync Customization
+            </span>
+            
+            <div className={styles.row}>
+              <div className={styles.formGroup} style={{ flex: 1 }}>
+                <label>Course Color</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input 
+                    type="color" 
+                    value={d2lClassColor} 
+                    onChange={(e) => setD2lClassColor(e.target.value)}
+                    className={styles.colorInput}
+                  />
+                  <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+                    {['#38bdf8', '#4ade80', '#a78bfa', '#f472b6', '#fbbf24', '#fb923c', '#e879f9'].map(c => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => setD2lClassColor(c)}
+                        style={{
+                          width: '20px',
+                          height: '20px',
+                          borderRadius: '50%',
+                          background: c,
+                          border: d2lClassColor === c ? '2px solid #ffffff' : '1px solid rgba(255,255,255,0.2)',
+                          cursor: 'pointer'
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className={styles.formGroup} style={{ width: '90px' }}>
+                <label>Credits (GPA)</label>
+                <input 
+                  type="number" 
+                  value={d2lCredits} 
+                  min={0}
+                  max={6}
+                  onChange={(e) => setD2lCredits(parseFloat(e.target.value) || 0)}
+                  className={styles.input}
+                />
+              </div>
+            </div>
+
+            <div className={styles.formGroup}>
+              <label>Instructor / Professor (Optional)</label>
+              <input 
+                type="text" 
+                value={d2lInstructor} 
+                onChange={(e) => setD2lInstructor(e.target.value)}
+                placeholder="e.g. Dr. Alan Turing"
+                className={styles.input}
+              />
+            </div>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '12px', color: 'var(--text-primary)', marginTop: '2px' }}>
+              <input 
+                type="checkbox" 
+                checked={d2lAutoSync} 
+                onChange={(e) => setD2lAutoSync(e.target.checked)} 
+              />
+              <span>Enable automatic background synchronization</span>
+            </label>
+          </div>
+
+          <button type="submit" className="btn-primary" disabled={isSyncing} style={{ marginTop: '8px' }}>
+            {isSyncing ? "Saving & Syncing Feed..." : "Save Feed & Sync Course"}
           </button>
         </form>
       </Modal>
