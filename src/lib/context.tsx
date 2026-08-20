@@ -586,59 +586,74 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
       const savedKey = localStorage.getItem('aca_gemini_key') || '';
       
       let initialClasses: Class[] = [];
-      if (savedClasses) {
+      const hasSavedClasses = savedClasses !== null;
+      if (hasSavedClasses) {
         try {
           const parsed = JSON.parse(savedClasses);
-          if (Array.isArray(parsed) && parsed.length > 0) {
+          if (Array.isArray(parsed)) {
             initialClasses = parsed;
           }
         } catch (e) {
           console.error("Failed to parse saved classes", e);
         }
-      }
-
-      // If no saved classes exist, or if an empty array was saved due to a previous race condition wipe
-      if (initialClasses.length === 0) {
+      } else {
         initialClasses = getDefaultClasses();
       }
       setClasses(initialClasses);
 
       let initialEvents: AcademicEvent[] = [];
-      if (savedEvents) {
+      const hasSavedEvents = savedEvents !== null;
+      if (hasSavedEvents) {
         try {
           const parsed = JSON.parse(savedEvents);
-          if (Array.isArray(parsed) && parsed.length > 0) {
+          if (Array.isArray(parsed)) {
             initialEvents = parsed;
           }
         } catch (e) {
           console.error("Failed to parse saved events", e);
         }
-      }
-
-      if (initialEvents.length === 0) {
+      } else {
         initialEvents = getDefaultEvents();
       }
       setEvents(initialEvents);
 
-      if (savedSources) {
+      if (savedSources !== null) {
         try {
           const parsed = JSON.parse(savedSources);
-          if (Array.isArray(parsed) && parsed.length > 0) setSources(parsed);
+          if (Array.isArray(parsed)) setSources(parsed);
         } catch {}
+      } else if (!hasSavedClasses) {
+        let defaultSrcs: NotebookSource[] = [];
+        initialClasses.forEach(c => {
+          defaultSrcs = [...defaultSrcs, ...generateDefaultSources(c.id, c.name)];
+        });
+        setSources(defaultSrcs);
       }
 
-      if (savedFlashcards) {
+      if (savedFlashcards !== null) {
         try {
           const parsed = JSON.parse(savedFlashcards);
-          if (Array.isArray(parsed) && parsed.length > 0) setFlashcards(parsed);
+          if (Array.isArray(parsed)) setFlashcards(parsed);
         } catch {}
+      } else if (!hasSavedClasses) {
+        let defaultFCs: Flashcard[] = [];
+        initialClasses.forEach(c => {
+          defaultFCs = [...defaultFCs, ...generateDefaultFlashcards(c.id, c.name)];
+        });
+        setFlashcards(defaultFCs);
       }
 
-      if (savedObjectives) {
+      if (savedObjectives !== null) {
         try {
           const parsed = JSON.parse(savedObjectives);
-          if (Array.isArray(parsed) && parsed.length > 0) setObjectives(parsed);
+          if (Array.isArray(parsed)) setObjectives(parsed);
         } catch {}
+      } else if (!hasSavedClasses) {
+        let defaultObjs: CoreObjective[] = [];
+        initialClasses.forEach(c => {
+          defaultObjs = [...defaultObjs, ...generateDefaultObjectives(c.id, c.name)];
+        });
+        setObjectives(defaultObjs);
       }
       
       // Ensure all feeds and classes with icalUrl are aligned
@@ -854,40 +869,6 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
     }
   }, [geminiKey, isLoaded]);
 
-  // Default initializers for demo data if user opens fresh app
-  useEffect(() => {
-    if (!isLoaded) return;
-    if (classes.length > 0 && sources.length === 0) {
-      let defaultSources: NotebookSource[] = [];
-      classes.forEach(c => {
-        defaultSources = [...defaultSources, ...generateDefaultSources(c.id, c.name)];
-      });
-      setSources(defaultSources);
-    }
-  }, [classes, sources, isLoaded]);
-
-  useEffect(() => {
-    if (!isLoaded) return;
-    if (classes.length > 0 && flashcards.length === 0) {
-      let defaultFCs: Flashcard[] = [];
-      classes.forEach(c => {
-        defaultFCs = [...defaultFCs, ...generateDefaultFlashcards(c.id, c.name)];
-      });
-      setFlashcards(defaultFCs);
-    }
-  }, [classes, flashcards, isLoaded]);
-
-  useEffect(() => {
-    if (!isLoaded) return;
-    if (classes.length > 0 && objectives.length === 0) {
-      let defaultObjs: CoreObjective[] = [];
-      classes.forEach(c => {
-        defaultObjs = [...defaultObjs, ...generateDefaultObjectives(c.id, c.name)];
-      });
-      setObjectives(defaultObjs);
-    }
-  }, [classes, objectives, isLoaded]);
-
   // Reset to default initial demo data
   const resetToDefaultData = () => {
     const defaultCls = getDefaultClasses();
@@ -997,16 +978,6 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
     const classId = Math.random().toString(36).substr(2, 9);
     const newClass: Class = { ...cls, id: classId };
     setClasses(prev => [...prev, newClass]);
-    
-    // Auto-generate default sources, flashcards & objectives for new classes
-    const defaultSources = generateDefaultSources(classId, cls.name);
-    setSources(prev => [...prev, ...defaultSources]);
-
-    const defaultFCs = generateDefaultFlashcards(classId, cls.name);
-    setFlashcards(prev => [...prev, ...defaultFCs]);
-
-    const defaultObjs = generateDefaultObjectives(classId, cls.name);
-    setObjectives(prev => [...prev, ...defaultObjs]);
 
     // If icalUrl was provided, check if a feed already exists before creating a new one
     if (cls.icalUrl && cls.icalUrl.trim()) {
